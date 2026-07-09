@@ -41,7 +41,7 @@ jobs:
       - name: Verify production API
         run: |
           node --input-type=module <<'JS'
-          const response = await fetch('https://badguard.samsong-1a3.workers.dev/api/health');
+          const response = await fetch('https://badguard.nizabentley397.workers.dev/api/health');
           if (!response.ok) {
             throw new Error(`BadGuard health check returned ${response.status}`);
           }

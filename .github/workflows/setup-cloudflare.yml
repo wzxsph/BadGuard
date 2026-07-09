@@ -1,0 +1,48 @@
+name: Setup Cloudflare
+
+on:
+  workflow_dispatch:
+    inputs:
+      workers_subdomain:
+        description: Workers.dev subdomain, without .workers.dev
+        required: true
+        default: nizabentley397
+
+permissions:
+  contents: write
+
+concurrency:
+  group: setup-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Ensure Cloudflare resources
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WORKERS_SUBDOMAIN: ${{ inputs.workers_subdomain }}
+        run: node .github/scripts/prepare-cloudflare.mjs
+
+      - name: Commit Cloudflare configuration
+        run: |
+          if [ -z "$(git status --porcelain wrangler.toml README.md .github/workflows/deploy-worker.yml .github/workflows/refresh-akshare.yml)" ]; then
+            echo "No Cloudflare configuration changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wrangler.toml README.md .github/workflows/deploy-worker.yml .github/workflows/refresh-akshare.yml
+          git commit -m "Configure Cloudflare account"
+          git push

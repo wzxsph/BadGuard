@@ -1,4 +1,5 @@
 name = "badguard"
+account_id = "c150f9a81fd3d95a9c31d5751c99eabc"
 main = "src/index.ts"
 compatibility_date = "2026-07-09"
 workers_dev = true

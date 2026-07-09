@@ -1,6 +1,6 @@
 # BadGuard 每日技术信号榜
 
-> 体验链接：<https://badguard.samsong-1a3.workers.dev>
+> 体验链接：<https://badguard.nizabentley397.workers.dev>
 
 BadGuard 是一个面向新手投资者的 A 股日线技术信号快照站。页面不提供筛选条件，不输出买入/卖出判断，只把每天收盘后的技术状态整理成 4 个固定榜单，并用“观察 / 谨慎”表达。
 
@@ -74,18 +74,19 @@ npx wrangler kv namespace create SIGNAL_KV --preview
 
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
-- `CF_KV_NAMESPACE_ID`
 
 当前部署使用的值：
 
-- `CLOUDFLARE_ACCOUNT_ID`: `d715dc07bce374169b3395aabbfeb69b`
-- `CF_KV_NAMESPACE_ID`: `00ffe08fee1f497fbbb669394596dab9`
+- `CLOUDFLARE_ACCOUNT_ID`: `c150f9a81fd3d95a9c31d5751c99eabc`
+- `SIGNAL_KV id`: `待 Setup Cloudflare 工作流写入`
+- `SIGNAL_KV preview_id`: `待 Setup Cloudflare 工作流写入`
 - `CLOUDFLARE_API_TOKEN`: 在 Cloudflare Dashboard 创建，至少需要 Workers Scripts 写入和 Workers KV 写入权限
 
 5. GitHub Actions：
 
 - `Deploy Worker`：push 到 `main` 或手动触发时，运行测试并部署 Worker
 - `Refresh AkShare Signals`：北京时间交易日 15:30 自动生成新快照并上传 Workers KV
+- `Setup Cloudflare`：首次接入新 Cloudflare 账号时手动触发，创建 KV namespace 并把新 ID 写回仓库
 
 6. 手动部署 Worker：
 
