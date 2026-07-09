@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -26,6 +28,12 @@ except ImportError as exc:  # pragma: no cover - friendly CLI failure
 CACHE_KEY = "latest-signal-snapshot"
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 OBSERVATION_SIGNAL_IDS = {"low-rebound", "trend-strength", "oversold-repair"}
+EASTMONEY_CLIST_URL = "https://82.push2.eastmoney.com/api/qt/clist/get"
+EASTMONEY_A_SHARE_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
+EASTMONEY_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
 
 SIGNAL_DEFINITIONS = [
     {
@@ -81,7 +89,7 @@ def main() -> None:
     end_date = args.end_date or datetime.now(CHINA_TZ).strftime("%Y%m%d")
     start_date = args.start_date or (datetime.now(CHINA_TZ) - timedelta(days=args.lookback_days)).strftime("%Y%m%d")
 
-    stocks = load_stock_universe(args.limit, args.include_st, args.universe_source)
+    stocks, actual_universe_source = load_stock_universe(args.limit, args.include_st, args.universe_source)
     print(f"Loaded {len(stocks)} stocks; fetching daily bars from {start_date} to {end_date}.")
 
     rows: list[dict[str, Any]] = []
@@ -117,7 +125,7 @@ def main() -> None:
         {
             "scanLimit": args.limit,
             "stockCount": len(stocks),
-            "universeSource": args.universe_source,
+            "universeSource": actual_universe_source,
             "historySource": args.history_source,
             "failureCount": len(failures),
             "buildMode": args.build_mode,
@@ -152,15 +160,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_stock_universe(limit: int, include_st: bool, universe_source: str) -> list[StockItem]:
+def load_stock_universe(limit: int, include_st: bool, universe_source: str) -> tuple[list[StockItem], str]:
+    actual_source = universe_source
+    spot_df: pd.DataFrame | None = None
+
     if universe_source == "realtime":
         try:
             spot_df = call_with_retry(ak.stock_zh_a_spot_em, "stock_zh_a_spot_em")
         except RuntimeError as exc:
-            print(f"Realtime universe unavailable, falling back to stock_info_a_code_name: {exc}")
+            print(f"AkShare realtime universe unavailable, trying Eastmoney direct clist: {exc}")
+            try:
+                spot_df = load_eastmoney_realtime_table(limit)
+                actual_source = "realtime"
+            except RuntimeError as direct_exc:
+                print(f"Eastmoney direct clist unavailable, falling back to stock_info_a_code_name: {direct_exc}")
+
+    if spot_df is None:
+        try:
             spot_df = load_code_name_table()
-    else:
-        spot_df = load_code_name_table()
+            actual_source = "code-list"
+        except RuntimeError as exc:
+            if universe_source == "realtime":
+                raise RuntimeError(f"Unable to load realtime or code-list universe: {exc}") from exc
+            print(f"AkShare code-list universe unavailable, trying Eastmoney direct clist: {exc}")
+            spot_df = load_eastmoney_realtime_table(limit)
+            actual_source = "realtime"
 
     required_columns = {"代码", "名称"}
     missing = required_columns - set(spot_df.columns)
@@ -181,7 +205,7 @@ def load_stock_universe(limit: int, include_st: bool, universe_source: str) -> l
     if limit > 0:
         spot_df = spot_df.head(limit)
 
-    return [
+    stocks = [
         StockItem(
             code=row["代码"],
             name=row["名称"],
@@ -189,11 +213,59 @@ def load_stock_universe(limit: int, include_st: bool, universe_source: str) -> l
         )
         for _, row in spot_df.iterrows()
     ]
+    return stocks, actual_source
 
 
 def load_code_name_table() -> pd.DataFrame:
     code_df = call_with_retry(ak.stock_info_a_code_name, "stock_info_a_code_name")
     return code_df.rename(columns={"code": "代码", "name": "名称"})
+
+
+def load_eastmoney_realtime_table(limit: int) -> pd.DataFrame:
+    rows = call_with_retry(lambda: request_eastmoney_realtime_rows(limit), "eastmoney_clist")
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        raise RuntimeError("eastmoney_clist returned no rows")
+
+    return frame.rename(columns={"f12": "代码", "f14": "名称", "f6": "成交额"})[["代码", "名称", "成交额"]]
+
+
+def request_eastmoney_realtime_rows(limit: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    page_size = 100
+    target = limit if limit > 0 else 6000
+    max_pages = max(1, math.ceil(target / page_size))
+
+    for page in range(1, max_pages + 1):
+        params = {
+            "pn": page,
+            "pz": page_size,
+            "po": 1,
+            "np": 1,
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": 2,
+            "invt": 2,
+            "fid": "f6",
+            "fs": EASTMONEY_A_SHARE_FS,
+            "fields": "f12,f14,f6",
+        }
+        request = Request(
+            f"{EASTMONEY_CLIST_URL}?{urlencode(params)}",
+            headers={"User-Agent": EASTMONEY_USER_AGENT, "Referer": "https://quote.eastmoney.com/center/gridlist.html"},
+        )
+
+        with urlopen(request, timeout=20) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        page_rows = (payload.get("data") or {}).get("diff") or []
+        if not page_rows:
+            break
+
+        rows.extend(page_rows)
+        if len(rows) >= target:
+            break
+
+    return rows[:limit] if limit > 0 else rows
 
 
 def fetch_and_score_stock(stock: StockItem, start_date: str, end_date: str, adjust: str, history_source: str, sleep_seconds: float) -> list[dict[str, Any]]:
