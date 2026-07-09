@@ -41,7 +41,7 @@ jobs:
         run: |
           SCAN_LIMIT="${{ github.event.inputs.scan_limit }}"
           if [ -z "$SCAN_LIMIT" ]; then
-            SCAN_LIMIT=1800
+            SCAN_LIMIT=1000
           fi
 
           python scripts/build_akshare_snapshot.py \
