@@ -37,9 +37,11 @@ npm run dev
 生产数据流推荐为：
 
 1. GitHub Actions 在北京时间交易日收盘后运行 AkShare 脚本。
-2. 脚本生成 `data/latest.json`。
+2. 脚本默认扫描成交额靠前的 1800 只活跃 A 股，生成 `data/latest.json`。
 3. Actions 把快照上传到 Cloudflare Workers KV 的 `latest-signal-snapshot`。
 4. Worker 读取 KV 并渲染页面；没有 KV 时读取随代码部署的 `data/latest.json`。
+
+默认使用活跃股票池，是为了减少低流动性噪音并保证每日刷新稳定完成。手动触发 `Refresh AkShare Signals` 时可以调整 `scan_limit`，填 `0` 可尝试全市场扫描。
 
 手动生成全市场快照：
 

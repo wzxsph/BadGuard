@@ -2,6 +2,11 @@ name: Refresh AkShare Signals
 
 on:
   workflow_dispatch:
+    inputs:
+      scan_limit:
+        description: Number of active A-share stocks to scan; use 0 for all.
+        required: true
+        default: "500"
   schedule:
     - cron: "30 7 * * 1-5"
 
@@ -33,7 +38,19 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Build AkShare signal snapshot
-        run: python scripts/build_akshare_snapshot.py --output data/latest.json --max-workers 4 --sleep 0.08
+        run: |
+          SCAN_LIMIT="${{ github.event.inputs.scan_limit }}"
+          if [ -z "$SCAN_LIMIT" ]; then
+            SCAN_LIMIT=1800
+          fi
+
+          python scripts/build_akshare_snapshot.py \
+            --output data/latest.json \
+            --universe-source realtime \
+            --history-source eastmoney \
+            --limit "$SCAN_LIMIT" \
+            --max-workers 8 \
+            --sleep 0.02
 
       - name: Install Worker dependencies
         run: npm ci
