@@ -78,11 +78,7 @@ GitHub Actions 需要配置：
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 
-当前部署：
-
-- `CLOUDFLARE_ACCOUNT_ID`: `c150f9a81fd3d95a9c31d5751c99eabc`
-- `SIGNAL_KV id`: `b1aa99421784423cb2669d98ffb302eb`
-- `SIGNAL_KV preview_id`: `f20d6971ccb24ec68ae81768e1f0ca8e`
+`CLOUDFLARE_API_TOKEN` 建议使用最小权限 Token，至少需要 Workers Scripts 写入和 Workers KV 写入权限。不要把 API Token 写进代码或 README。
 
 手动部署：
 
