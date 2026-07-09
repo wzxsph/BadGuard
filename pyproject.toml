@@ -1,0 +1,13 @@
+[project]
+name = "badguard"
+version = "0.1.0"
+description = "A Cloudflare Workers mini-site for daily A-share technical signal snapshots."
+requires-python = ">=3.11"
+dependencies = [
+  "akshare>=1.18.64",
+  "numpy>=1.26.0",
+  "pandas>=2.2.0",
+]
+
+[tool.uv]
+package = false

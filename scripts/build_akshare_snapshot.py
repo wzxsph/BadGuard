@@ -22,7 +22,7 @@ import pandas as pd
 try:
     import akshare as ak
 except ImportError as exc:  # pragma: no cover - friendly CLI failure
-    raise SystemExit("AkShare is not installed. Run: pip install -r requirements.txt") from exc
+    raise SystemExit("AkShare is not installed. Run: uv sync") from exc
 
 
 CACHE_KEY = "latest-signal-snapshot"

@@ -68,6 +68,19 @@ describe("daily technical signal board", () => {
     expect(html).not.toContain("每日技术信号榜");
   });
 
+  it("renders a name-only company directory before the boards", () => {
+    const html = renderHtml(snapshot);
+    const directoryMatch = html.match(/<div class="directory-list">([\s\S]*?)<\/div>/);
+    expect(directoryMatch).not.toBeNull();
+
+    const visibleNames = [...directoryMatch![1].matchAll(/<a class="directory-link"[^>]*>(.*?)<\/a>/g)].map((match) => match[1]);
+
+    expect(html.indexOf('id="company-directory"')).toBeLessThan(html.indexOf('id="low-rebound"'));
+    expect(html.indexOf('id="company-directory"')).toBeLessThan(html.indexOf('class="professional-notes"'));
+    expect(visibleNames.length).toBeGreaterThan(0);
+    expect(visibleNames.every((name) => !/\d{6}/.test(name))).toBe(true);
+  });
+
   it("keeps risk-filter rows out of the upside summary", () => {
     expect(snapshot.topRows.every((row) => row.signalId !== "risk-filter")).toBe(true);
     expect(new Set(snapshot.topRows.map((row) => row.stance))).toEqual(new Set(["观察"]));
@@ -83,7 +96,7 @@ describe("daily technical signal board", () => {
 
   it("keeps technical indicator values inside the detail area", () => {
     const html = renderHtml(snapshot);
-    const cardMatch = html.match(/<article class="signal-card">([\s\S]*?)<\/article>/);
+    const cardMatch = html.match(/<article class="signal-card"[^>]*>([\s\S]*?)<\/article>/);
     expect(cardMatch).not.toBeNull();
 
     const [mainArea, detailArea] = cardMatch![1].split('<details class="signal-detail">');
@@ -94,6 +107,11 @@ describe("daily technical signal board", () => {
     expect(detailArea).toContain("KDJ");
     expect(detailArea).toContain("MACD");
     expect(detailArea).toContain("RSI");
+    expect(detailArea).toContain("公司概况 F10 小抄");
+    expect(detailArea).toContain("主营业务");
+    expect(detailArea).toContain("经营范围");
+    expect(detailArea).not.toContain("<dt>公司</dt>");
+    expect(detailArea).not.toContain("<dt>行业</dt>");
   });
 
   it("renders the daily summary after all four boards", () => {

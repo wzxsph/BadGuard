@@ -1,4 +1,5 @@
-import type { SignalBoard, SignalId, SignalRow, SignalSnapshot } from "./types";
+import companyProfilesJson from "../data/company-profiles.json";
+import type { CompanyProfile, SignalBoard, SignalId, SignalRow, SignalSnapshot } from "./types";
 
 interface SignalPresentation {
   title: string;
@@ -44,6 +45,8 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
   }
 };
 
+const COMPANY_PROFILES = companyProfilesJson as Record<string, CompanyProfile>;
+
 export function renderHtml(snapshot: SignalSnapshot): string {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -69,6 +72,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
     </dl>
   </header>
 
+  ${renderCompanyDirectory(snapshot)}
   ${renderProfessionalNotes()}
 
   <main>
@@ -83,7 +87,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
         </div>
         <span class="count">${snapshot.topRows.length} 条</span>
       </div>
-      ${renderCards(snapshot.topRows, true)}
+      ${renderCards(snapshot.topRows, true, "summary")}
     </section>
   </main>
 
@@ -116,6 +120,47 @@ function renderProfessionalNotes(): string {
   </section>`;
 }
 
+function renderCompanyDirectory(snapshot: SignalSnapshot): string {
+  const rows = getDirectoryRows(snapshot);
+  if (rows.length === 0) {
+    return "";
+  }
+
+  const links = rows
+    .map((row) => {
+      const copy = SIGNAL_COPY[row.signalId];
+      return `<a class="directory-link" href="#${cardId(row, "board")}" aria-label="${escapeHtml(row.name)}，${escapeHtml(copy.professionalTitle)}">${escapeHtml(row.name)}</a>`;
+    })
+    .join("");
+
+  return `<nav class="company-directory" id="company-directory" aria-label="公司名称目录">
+    <div class="company-directory__head">
+      <p class="eyebrow">公司名目录 · 只看名字</p>
+      <h2>先别看指标，看看今天谁递纸条</h2>
+      <p>只列公司名称。点一下名字，直接跳到对应纸条；适合先扫一眼有没有熟脸。</p>
+    </div>
+    <div class="directory-list">${links}</div>
+  </nav>`;
+}
+
+function getDirectoryRows(snapshot: SignalSnapshot): SignalRow[] {
+  const seen = new Set<string>();
+  const rows: SignalRow[] = [];
+
+  for (const board of snapshot.boards) {
+    for (const row of board.rows) {
+      if (seen.has(row.code)) {
+        continue;
+      }
+
+      seen.add(row.code);
+      rows.push(row);
+    }
+  }
+
+  return rows;
+}
+
 function renderBoard(board: SignalBoard): string {
   const copy = SIGNAL_COPY[board.id];
 
@@ -128,25 +173,26 @@ function renderBoard(board: SignalBoard): string {
       </div>
       <span class="stance stance--${board.stance === "谨慎" ? "caution" : "observe"}">${board.stance}</span>
     </div>
-    ${renderCards(board.rows, false)}
+    ${renderCards(board.rows, false, "board")}
   </section>`;
 }
 
-function renderCards(rows: SignalRow[], showSignal: boolean): string {
+function renderCards(rows: SignalRow[], showSignal: boolean, variant: "board" | "summary"): string {
   if (rows.length === 0) {
     return `<div class="empty">今日这张纸条空空如也，市场暂时没递话。</div>`;
   }
 
   return `<div class="signal-list">
-    ${rows.map((row) => renderCard(row, showSignal)).join("")}
+    ${rows.map((row) => renderCard(row, showSignal, variant)).join("")}
   </div>`;
 }
 
-function renderCard(row: SignalRow, showSignal: boolean): string {
+function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "summary"): string {
   const stanceClass = row.stance === "谨慎" ? "caution" : "observe";
   const copy = SIGNAL_COPY[row.signalId];
+  const companyProfile = getCompanyProfile(row);
 
-  return `<article class="signal-card">
+  return `<article class="signal-card" id="${cardId(row, variant)}">
     <div class="card-topline">
       <div class="stock-title">
         <strong>${escapeHtml(row.name)}</strong>
@@ -175,8 +221,9 @@ function renderCard(row: SignalRow, showSignal: boolean): string {
     </div>
 
     <details class="signal-detail">
-      <summary>展开指标明细</summary>
-      <dl>
+      <summary>展开详情</summary>
+      ${renderCompanyProfile(companyProfile)}
+      <dl class="indicator-detail">
         <div><dt>专业注解</dt><dd>${escapeHtml(copy.professionalTitle)}：${escapeHtml(row.signalName)}</dd></div>
         <div><dt>KDJ</dt><dd>K ${formatNumber(row.indicators.kdj.k)} / D ${formatNumber(row.indicators.kdj.d)} / J ${formatNumber(row.indicators.kdj.j)}</dd></div>
         <div><dt>MACD</dt><dd>DIF ${formatNumber(row.indicators.macd.dif)} / DEA ${formatNumber(row.indicators.macd.dea)} / H ${formatNumber(row.indicators.macd.histogram)}</dd></div>
@@ -184,6 +231,138 @@ function renderCard(row: SignalRow, showSignal: boolean): string {
       </dl>
     </details>
   </article>`;
+}
+
+function cardId(row: Pick<SignalRow, "code" | "signalId">, variant: "board" | "summary"): string {
+  return `${variant === "board" ? "stock" : "summary"}-${row.code}-${row.signalId}`;
+}
+
+function getCompanyProfile(row: Pick<SignalRow, "code" | "name" | "industry">): CompanyProfile {
+  const profile = COMPANY_PROFILES[row.code];
+  if (profile) {
+    return {
+      ...profile,
+      name: profile.name || row.name,
+      industry: profile.industry || row.industry
+    };
+  }
+
+  return {
+    code: row.code,
+    name: row.name,
+    industry: row.industry || "未分类",
+    market: inferMarket(row.code),
+    profileSource: "signal-snapshot",
+    updatedAt: "",
+    mainBusiness: "",
+    businessScope: "",
+    organizationProfile: "",
+    businessComposition: [],
+    note: "暂未抓到完整 F10，只保留信号快照里的基础识别信息；别急，这家公司资料还在路上。"
+  };
+}
+
+function renderCompanyProfile(profile: CompanyProfile): string {
+  const sourceLabel = profile.profileSource === "akshare-f10" ? "F10 已收录" : "资料待补";
+  const rows = buildCompanyProfileRows(profile);
+
+  return `<section class="company-profile" aria-label="公司概况F10">
+    <div class="company-profile__title">
+      <h3>公司概况 F10 小抄</h3>
+      <span>${escapeHtml(sourceLabel)}</span>
+    </div>
+    <dl>
+      ${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
+    </dl>
+    ${profile.note ? `<p>${escapeHtml(profile.note)}</p>` : ""}
+  </section>`;
+}
+
+function buildCompanyProfileRows(profile: CompanyProfile): Array<[string, string]> {
+  const profileRows: Array<[string, string]> = [
+    ["主营业务", profile.mainBusiness || ""],
+    ["主营构成", formatBusinessComposition(profile)],
+    ["经营范围", profile.businessScope || ""],
+    ["公司小传", profile.organizationProfile || ""],
+    ["上市/成立", formatProfileDates(profile)],
+    ["注册/办公", formatProfileAddress(profile)],
+    ["法人/注册资本", formatRepresentative(profile)],
+    ["官网/联系", formatProfileContact(profile)]
+  ];
+  const rows = profileRows.filter(([, value]) => value.trim().length > 0);
+
+  if (rows.length === 0) {
+    return [["资料状态", "F10 还没收集到，当前只展示技术信号；这家公司先记在小本本上。"]];
+  }
+
+  return rows;
+}
+
+function formatBusinessComposition(profile: CompanyProfile): string {
+  const segments = (profile.businessComposition || [])
+    .filter((segment) => segment.name)
+    .slice(0, 4);
+
+  if (segments.length === 0) {
+    return "";
+  }
+
+  const reportDate = segments[0].reportDate ? `${segments[0].reportDate}：` : "";
+  const summary = segments
+    .map((segment) => {
+      const revenueRatio = typeof segment.revenueRatioPct === "number" ? `收入占比 ${formatNumber(segment.revenueRatioPct)}%` : "";
+      const grossMargin = typeof segment.grossMarginPct === "number" ? `毛利率 ${formatNumber(segment.grossMarginPct)}%` : "";
+      return [segment.name, revenueRatio, grossMargin].filter(Boolean).join(" / ");
+    })
+    .join("；");
+
+  return `${reportDate}${summary}`;
+}
+
+function formatProfileDates(profile: CompanyProfile): string {
+  const items = [
+    profile.listingDate ? `上市 ${profile.listingDate}` : "",
+    profile.establishedDate ? `成立 ${profile.establishedDate}` : ""
+  ].filter(Boolean);
+  return items.join("；");
+}
+
+function formatProfileAddress(profile: CompanyProfile): string {
+  const items = [
+    profile.region ? `地区 ${profile.region}` : "",
+    profile.officeAddress ? `办公 ${profile.officeAddress}` : "",
+    profile.registeredAddress && profile.registeredAddress !== profile.officeAddress ? `注册 ${profile.registeredAddress}` : ""
+  ].filter(Boolean);
+  return items.join("；");
+}
+
+function formatRepresentative(profile: CompanyProfile): string {
+  const items = [
+    profile.legalRepresentative ? `法人 ${profile.legalRepresentative}` : "",
+    profile.registeredCapital ? `注册资金 ${profile.registeredCapital}` : ""
+  ].filter(Boolean);
+  return items.join("；");
+}
+
+function formatProfileContact(profile: CompanyProfile): string {
+  const items = [
+    profile.website ? `官网 ${profile.website}` : "",
+    profile.phone ? `电话 ${profile.phone}` : "",
+    profile.email ? `邮箱 ${profile.email}` : ""
+  ].filter(Boolean);
+  return items.join("；");
+}
+
+function inferMarket(code: string): string {
+  if (code.startsWith("6")) {
+    return "上交所";
+  }
+
+  if (code.startsWith("8") || code.startsWith("4")) {
+    return "北交所";
+  }
+
+  return "深交所";
 }
 
 function formatAmount(value: number): string {
@@ -494,6 +673,58 @@ body::before {
   line-height: 1.55;
 }
 
+.company-directory {
+  max-width: 1220px;
+  margin: 22px auto 0;
+  padding: 0 clamp(12px, 4vw, 40px);
+}
+
+.company-directory__head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.company-directory__head h2 {
+  margin: 0;
+  font-size: clamp(1.26rem, 2.4vw, 1.7rem);
+  line-height: 1.25;
+}
+
+.company-directory__head p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.directory-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 250, 240, 0.7);
+}
+
+.directory-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  color: var(--soft-ink);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(164, 71, 53, 0.4);
+  background: rgba(245, 231, 196, 0.38);
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.directory-link:hover {
+  color: var(--cinnabar);
+  background: rgba(250, 232, 223, 0.72);
+}
+
 main {
   display: grid;
   gap: 30px;
@@ -639,7 +870,7 @@ main {
 }
 
 .card-metrics,
-.signal-detail dl {
+.indicator-detail {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 12px;
@@ -647,12 +878,14 @@ main {
 }
 
 .card-metrics div,
-.signal-detail div {
+.indicator-detail div,
+.company-profile div {
   min-width: 0;
 }
 
 .card-metrics dt,
-.signal-detail dt {
+.indicator-detail dt,
+.company-profile dt {
   margin-bottom: 3px;
   color: var(--muted);
   font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -661,7 +894,8 @@ main {
 }
 
 .card-metrics dd,
-.signal-detail dd {
+.indicator-detail dd,
+.company-profile dd {
   margin: 0;
   color: var(--soft-ink);
   font-size: 0.9rem;
@@ -745,7 +979,52 @@ meter::-webkit-meter-optimum-value {
   list-style-position: outside;
 }
 
-.signal-detail dl {
+.company-profile {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid rgba(54, 83, 122, 0.24);
+  border-radius: 6px;
+  background: rgba(255, 250, 240, 0.72);
+}
+
+.company-profile__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.company-profile h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.company-profile__title span {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  color: var(--indigo);
+  border: 1px solid rgba(54, 83, 122, 0.34);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.company-profile dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.company-profile p {
+  margin: 9px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.indicator-detail {
   grid-template-columns: 1fr;
   margin-top: 10px;
   padding: 11px;

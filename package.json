@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "akshare:build": "python3 scripts/build_akshare_snapshot.py --output data/latest.json",
-    "akshare:build:quick": "python3 scripts/build_akshare_snapshot.py --output data/latest.json --limit 500 --max-workers 8 --sleep 0",
+    "akshare:build": "uv run python scripts/build_akshare_snapshot.py --output data/latest.json",
+    "akshare:build:quick": "uv run python scripts/build_akshare_snapshot.py --output data/latest.json --limit 500 --max-workers 8 --sleep 0",
+    "akshare:profiles": "uv run python scripts/build_company_profiles.py --snapshot data/latest.json --output data/company-profiles.json --fetch-akshare",
     "dev": "wrangler dev --local --port 8787",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",

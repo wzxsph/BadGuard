@@ -113,19 +113,12 @@ const previewNamespaceId = await ensureNamespace(previewNamespaceTitle);
 
 await updateWrangler(namespaceId, previewNamespaceId);
 
-await updateTextFile("README.md", (content) => {
-  return content
-    .replace(/- `CLOUDFLARE_ACCOUNT_ID`: `[^`]+`/, `- \`CLOUDFLARE_ACCOUNT_ID\`: \`${accountId}\``)
-    .replace(/- `SIGNAL_KV id`: `[^`]+`/, `- \`SIGNAL_KV id\`: \`${namespaceId}\``)
-    .replace(/- `SIGNAL_KV preview_id`: `[^`]+`/, `- \`SIGNAL_KV preview_id\`: \`${previewNamespaceId}\``);
-});
+await updateTextFile("README.md", (content) => content);
 
 await updateTextFile(".github/workflows/deploy-worker.yml", (content) => content);
 await updateTextFile(".github/workflows/refresh-akshare.yml", (content) => content);
 
 console.log(JSON.stringify({
   deploymentUrl,
-  accountId,
-  namespaceId,
-  previewNamespaceId
+  kvBinding: bindingName
 }, null, 2));

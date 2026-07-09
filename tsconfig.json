@@ -10,5 +10,5 @@
     "types": ["@cloudflare/workers-types", "vitest/globals", "node"],
     "skipLibCheck": true
   },
-  "include": ["src", "tests", "data/latest.json"]
+  "include": ["src", "tests", "data/**/*.json"]
 }

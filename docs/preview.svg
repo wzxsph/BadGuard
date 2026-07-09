@@ -43,7 +43,7 @@
   </g>
   <g transform="translate(480 535)">
     <rect width="152" height="54" rx="6" fill="#E8EDF4" stroke="#36537A" stroke-opacity="0.34"/>
-    <text x="20" y="34" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">展开指标</text>
+    <text x="20" y="34" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">F10小抄</text>
   </g>
 
   <g transform="translate(727 74)">
@@ -61,6 +61,11 @@
       <text x="92" y="29" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">收盘快照</text>
       <text x="16" y="55" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">数据范围</text>
       <text x="92" y="55" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">活跃A股池</text>
+    </g>
+
+    <g transform="translate(38 260)">
+      <text x="0" y="0" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">公司名目录</text>
+      <text x="78" y="0" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">只看名字 · 点名跳转</text>
     </g>
 
     <g transform="translate(38 276)">

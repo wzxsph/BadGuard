@@ -59,6 +59,42 @@ export interface SignalRow {
   signalStrength: number;
 }
 
+export interface CompanyProfile {
+  code: string;
+  name: string;
+  industry: string;
+  companyName?: string;
+  englishName?: string;
+  formerName?: string;
+  market?: string;
+  legalRepresentative?: string;
+  registeredCapital?: string;
+  establishedDate?: string;
+  listingDate?: string;
+  region?: string;
+  mainBusiness?: string;
+  businessScope?: string;
+  organizationProfile?: string;
+  registeredAddress?: string;
+  officeAddress?: string;
+  postalCode?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  businessComposition?: BusinessSegment[];
+  profileSource: "akshare-f10" | "signal-snapshot";
+  updatedAt: string;
+  note?: string;
+}
+
+export interface BusinessSegment {
+  category?: string;
+  name: string;
+  reportDate?: string;
+  revenueRatioPct?: number;
+  grossMarginPct?: number | null;
+}
+
 export interface SignalDefinition {
   id: SignalId;
   title: string;

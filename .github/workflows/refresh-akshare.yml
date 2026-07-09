@@ -37,13 +37,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install Python dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements.txt
+        run: uv sync --locked
 
       - name: Build AkShare signal snapshot
         env:
@@ -59,7 +63,7 @@ jobs:
             BUILD_MODE=production
           fi
 
-          python scripts/build_akshare_snapshot.py \
+          uv run python scripts/build_akshare_snapshot.py \
             --output data/latest.json \
             --universe-source realtime \
             --history-source eastmoney \
