@@ -48,6 +48,8 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
 const COMPANY_PROFILES = companyProfilesJson as Record<string, CompanyProfile>;
 const INITIAL_VISIBLE_CARDS = 5;
 const CARD_REVEAL_STEP = 10;
+const INITIAL_VISIBLE_DIRECTORY_ITEMS = 30;
+const DIRECTORY_REVEAL_STEP = 30;
 
 export function renderHtml(snapshot: SignalSnapshot): string {
   return `<!doctype html>
@@ -130,11 +132,17 @@ function renderCompanyDirectory(snapshot: SignalSnapshot): string {
   }
 
   const links = rows
-    .map((row) => {
+    .map((row, index) => {
       const copy = SIGNAL_COPY[row.signalId];
-      return `<a class="directory-link" href="#${cardId(row, "board")}" aria-label="${escapeHtml(row.name)}，${escapeHtml(copy.professionalTitle)}">${escapeHtml(row.name)}</a>`;
+      return `<a class="directory-link" href="#${cardId(row, "board")}" aria-label="${escapeHtml(row.name)}，${escapeHtml(copy.professionalTitle)}" data-progress-item${index >= INITIAL_VISIBLE_DIRECTORY_ITEMS ? " hidden" : ""}>${escapeHtml(row.name)}</a>`;
     })
     .join("");
+  const moreButton = rows.length > INITIAL_VISIBLE_DIRECTORY_ITEMS
+    ? `<button class="show-more show-more--directory" type="button" data-progress-more aria-controls="company-directory-list">
+        <span>【展示更多】</span>
+        <small data-progress-hint>再看 ${Math.min(DIRECTORY_REVEAL_STEP, rows.length - INITIAL_VISIBLE_DIRECTORY_ITEMS)} 个，还剩 ${rows.length - INITIAL_VISIBLE_DIRECTORY_ITEMS} 个</small>
+      </button>`
+    : "";
 
   return `<nav class="company-directory" id="company-directory" aria-label="公司名称目录">
     <div class="company-directory__head">
@@ -142,7 +150,10 @@ function renderCompanyDirectory(snapshot: SignalSnapshot): string {
       <h2>先别看指标，看看今天谁递纸条</h2>
       <p>只列公司名称。点一下名字，直接跳到对应纸条；适合先扫一眼有没有熟脸。</p>
     </div>
-    <div class="directory-list">${links}</div>
+    <div class="directory-shell" data-progressive-list data-step="${DIRECTORY_REVEAL_STEP}">
+      <div class="directory-list" id="company-directory-list">${links}</div>
+      ${moreButton}
+    </div>
   </nav>`;
 }
 
@@ -205,7 +216,7 @@ function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "sum
   const copy = SIGNAL_COPY[row.signalId];
   const companyProfile = getCompanyProfile(row);
 
-  return `<article class="signal-card" id="${cardId(row, variant)}" data-progress-card${hidden ? " hidden" : ""}>
+  return `<article class="signal-card" id="${cardId(row, variant)}" data-progress-card data-progress-item${hidden ? " hidden" : ""}>
     <div class="card-topline">
       <div class="stock-title">
         <strong>${escapeHtml(row.name)}</strong>
@@ -724,6 +735,11 @@ body::before {
   background: rgba(255, 250, 240, 0.7);
 }
 
+.directory-shell {
+  display: grid;
+  gap: 10px;
+}
+
 .directory-link {
   display: inline-flex;
   align-items: center;
@@ -858,6 +874,11 @@ main {
   color: var(--muted);
   font-size: 0.76rem;
   font-weight: 800;
+}
+
+.show-more--directory {
+  justify-self: start;
+  margin-left: 4px;
 }
 
 .signal-card {
@@ -1208,7 +1229,7 @@ meter::-webkit-meter-optimum-value {
 
 const JS = `
 (() => {
-  const getCards = (wrapper) => Array.from(wrapper.querySelectorAll("[data-progress-card]"));
+  const getItems = (wrapper) => Array.from(wrapper.querySelectorAll("[data-progress-item]"));
 
   const updateButton = (wrapper) => {
     const button = wrapper.querySelector("[data-progress-more]");
@@ -1216,8 +1237,8 @@ const JS = `
       return;
     }
 
-    const cards = getCards(wrapper);
-    const hiddenCount = cards.filter((card) => card.hidden).length;
+    const items = getItems(wrapper);
+    const hiddenCount = items.filter((item) => item.hidden).length;
     if (hiddenCount <= 0) {
       button.hidden = true;
       return;
@@ -1233,16 +1254,16 @@ const JS = `
   };
 
   const revealCards = (wrapper, targetIndex) => {
-    const cards = getCards(wrapper);
-    const firstHiddenIndex = cards.findIndex((card) => card.hidden);
-    const visibleCount = firstHiddenIndex === -1 ? cards.length : firstHiddenIndex;
+    const items = getItems(wrapper);
+    const firstHiddenIndex = items.findIndex((item) => item.hidden);
+    const visibleCount = firstHiddenIndex === -1 ? items.length : firstHiddenIndex;
     const step = Number(wrapper.dataset.step || 10);
     const nextVisibleCount = typeof targetIndex === "number"
       ? Math.max(visibleCount, targetIndex + 1)
-      : Math.min(cards.length, visibleCount + step);
+      : Math.min(items.length, visibleCount + step);
 
-    cards.slice(0, nextVisibleCount).forEach((card) => {
-      card.hidden = false;
+    items.slice(0, nextVisibleCount).forEach((item) => {
+      item.hidden = false;
     });
     updateButton(wrapper);
   };
@@ -1276,7 +1297,7 @@ const JS = `
     }
 
     event.preventDefault();
-    const targetIndex = getCards(wrapper).indexOf(target);
+    const targetIndex = getItems(wrapper).indexOf(target);
     revealCards(wrapper, targetIndex);
     target.scrollIntoView({ block: "start", behavior: "smooth" });
     history.replaceState(null, "", "#" + id);

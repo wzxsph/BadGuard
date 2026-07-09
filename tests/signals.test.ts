@@ -70,15 +70,24 @@ describe("daily technical signal board", () => {
 
   it("renders a name-only company directory before the boards", () => {
     const html = renderHtml(snapshot);
-    const directoryMatch = html.match(/<div class="directory-list">([\s\S]*?)<\/div>/);
+    const directoryMatch = html.match(/<div class="directory-list"[^>]*>([\s\S]*?)<\/div>/);
     expect(directoryMatch).not.toBeNull();
 
-    const visibleNames = [...directoryMatch![1].matchAll(/<a class="directory-link"[^>]*>(.*?)<\/a>/g)].map((match) => match[1]);
+    const directoryLinks = [...directoryMatch![1].matchAll(/<a class="directory-link"[^>]*>(.*?)<\/a>/g)];
+    const visibleNames = directoryLinks.map((match) => match[1]);
+    const visibleLinkTags = directoryLinks.map((match) => match[0]);
 
     expect(html.indexOf('id="company-directory"')).toBeLessThan(html.indexOf('id="low-rebound"'));
     expect(html.indexOf('id="company-directory"')).toBeLessThan(html.indexOf('class="professional-notes"'));
     expect(visibleNames.length).toBeGreaterThan(0);
     expect(visibleNames.every((name) => !/\d{6}/.test(name))).toBe(true);
+    expect(visibleLinkTags.slice(0, 30).every((tag) => !tag.includes(" hidden"))).toBe(true);
+
+    if (visibleLinkTags.length > 30) {
+      expect(visibleLinkTags.slice(30).every((tag) => tag.includes(" hidden"))).toBe(true);
+      expect(html).toContain('aria-controls="company-directory-list"');
+      expect(html).toContain("再看 30 个");
+    }
   });
 
   it("keeps risk-filter rows out of the upside summary", () => {
