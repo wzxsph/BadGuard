@@ -7,7 +7,7 @@
 ![BadGuard 产品预览](docs/preview.svg)
 
 <details>
-<summary><strong>【更多项目体验截图】点开像翻 PPT 一样横向看</strong></summary>
+<summary><strong>【更多项目效果图】</strong></summary>
 
 | 首页阅读顺序 | 卡片与详情 | 移动端渐进展开 |
 | --- | --- | --- |

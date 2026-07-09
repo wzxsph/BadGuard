@@ -194,7 +194,8 @@ describe("daily technical signal board", () => {
     expect(readme).toContain("docs/experience-overview.svg");
     expect(readme).toContain("docs/experience-card-detail.svg");
     expect(readme).toContain("docs/experience-mobile-progressive.svg");
-    expect(readme).toContain("【更多项目体验截图】");
+    expect(readme).toContain("【更多项目效果图】");
+    expect(readme).not.toContain("点开像翻 PPT 一样横向看");
     expect(readme).toContain("<details>");
     expect(readme).not.toContain("docs/preview.png");
     expect(readme).not.toMatch(/c150f9|b1aa994|f20d697/);
