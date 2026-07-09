@@ -58,6 +58,16 @@ describe("daily technical signal board", () => {
     expect(renderHtml(snapshot)).toContain("数据范围");
   });
 
+  it("renders the paper-note tone with a separate professional annotation area", () => {
+    const html = renderHtml(snapshot);
+
+    expect(html).toContain("散户看盘小纸条");
+    expect(html).toContain("专业注解 · 冷静区");
+    expect(html).toContain("今天又来抄底啦");
+    expect(html).toContain("仅用于个人学习");
+    expect(html).not.toContain("每日技术信号榜");
+  });
+
   it("keeps risk-filter rows out of the upside summary", () => {
     expect(snapshot.topRows.every((row) => row.signalId !== "risk-filter")).toBe(true);
     expect(new Set(snapshot.topRows.map((row) => row.stance))).toEqual(new Set(["观察"]));

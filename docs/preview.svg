@@ -1,80 +1,100 @@
 <svg width="1200" height="760" viewBox="0 0 1200 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">BadGuard daily technical signal board preview</title>
-  <desc id="desc">A native product cover image showing a mobile BadGuard signal board with four fixed A-share technical signal lists.</desc>
-  <rect width="1200" height="760" fill="#F5F7FA"/>
-  <rect x="64" y="54" width="1072" height="652" rx="28" fill="#FFFFFF" stroke="#D9E1EA"/>
+  <title id="title">BadGuard 散户看盘小纸条预览</title>
+  <desc id="desc">A native paper-and-ink product cover for BadGuard, showing a mobile retail-investor signal note interface with four humorous boards and professional annotations.</desc>
+  <defs>
+    <pattern id="fiber" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M0 5H18M7 0V18" stroke="#2D2317" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="paper" x1="72" y1="44" x2="1120" y2="710" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF9EA"/>
+      <stop offset="0.58" stop-color="#F5E8C8"/>
+      <stop offset="1" stop-color="#E8EDF4"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#3C2B14" flood-opacity="0.14"/>
+    </filter>
+  </defs>
 
-  <text x="112" y="130" fill="#2459A6" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="800">BadGuard · A股日线 · 收盘后快照</text>
-  <text x="112" y="190" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="62" font-weight="900">每日技术信号榜</text>
-  <text x="112" y="244" fill="#4B5565" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="26" font-weight="500">不预测涨跌，只把市场留下的技术痕迹整理清楚。</text>
+  <rect width="1200" height="760" fill="#F3EDDD"/>
+  <rect width="1200" height="760" fill="url(#fiber)" opacity="0.7"/>
+  <rect x="64" y="54" width="1072" height="652" rx="8" fill="url(#paper)" stroke="#6F5B3F" stroke-opacity="0.25" filter="url(#softShadow)"/>
+  <path d="M112 265C250 232 374 238 520 205C604 186 666 166 742 170" stroke="#24201A" stroke-opacity="0.18" stroke-width="18" stroke-linecap="round"/>
+  <path d="M112 278C240 252 382 256 530 226C628 206 693 194 760 196" stroke="#24201A" stroke-opacity="0.12" stroke-width="7" stroke-linecap="round"/>
 
-  <g transform="translate(112 306)">
-    <rect width="238" height="78" rx="12" fill="#EDF4FF" stroke="#C8D8EE"/>
-    <text x="22" y="32" fill="#2459A6" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="800">上行观察优先级</text>
-    <text x="22" y="58" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="900">观察信号排序</text>
-  </g>
-  <g transform="translate(376 306)">
-    <rect width="238" height="78" rx="12" fill="#E7F5EF" stroke="#B7E0CC"/>
-    <text x="22" y="32" fill="#12805C" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="800">四个固定榜单</text>
-    <text x="22" y="58" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="24" font-weight="900">打开即看</text>
-  </g>
-  <g transform="translate(112 414)">
-    <rect width="502" height="104" rx="14" fill="#FFF8E5" stroke="#F3D27B"/>
-    <text x="24" y="38" fill="#8A5A00" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="800">产品边界</text>
-    <text x="24" y="72" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="25" font-weight="850">观察 / 谨慎，不写买入卖出</text>
-  </g>
-  <g transform="translate(112 548)">
-    <text fill="#697586" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="20">市场没有确定性，只有概率。看懂趋势，比预测涨跌更重要。</text>
+  <text x="112" y="125" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="900">BadGuard · 收盘后小纸条</text>
+  <text x="112" y="190" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="64" font-weight="900">散户看盘小纸条</text>
+  <text x="112" y="244" fill="#4F473C" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="27" font-weight="700">今天又来抄底啦？先把纸条摊开看看。</text>
+
+  <g transform="translate(112 320)">
+    <rect width="520" height="170" rx="8" fill="#FFFAF0" fill-opacity="0.76" stroke="#6F5B3F" stroke-opacity="0.24"/>
+    <text x="26" y="42" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="900">专业注解 · 冷静区</text>
+    <text x="26" y="78" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="28" font-weight="900">标题可以嘴贫，指标不能乱来</text>
+    <text x="26" y="116" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20">KDJ / MACD / RSI / BOLL / 均线 / 量能</text>
+    <text x="26" y="148" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="800">只做学习观察，不构成投资建议</text>
   </g>
 
-  <g transform="translate(720 74)">
-    <rect x="0" y="0" width="330" height="612" rx="42" fill="#182230"/>
-    <rect x="16" y="18" width="298" height="576" rx="30" fill="#F8FAFC"/>
-    <rect x="132" y="34" width="66" height="8" rx="4" fill="#D9E1EA"/>
-    <text x="38" y="82" fill="#2459A6" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">BadGuard · 收盘后快照</text>
-    <text x="38" y="119" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="31" font-weight="900">每日技术信号榜</text>
-    <text x="38" y="151" fill="#697586" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="14">日线级别 · 简单透明 · 可解释</text>
+  <g transform="translate(112 535)">
+    <rect width="164" height="54" rx="6" fill="#E6F1EA" stroke="#2F6F5F" stroke-opacity="0.38"/>
+    <text x="20" y="34" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">围观优先级</text>
+  </g>
+  <g transform="translate(296 535)">
+    <rect width="164" height="54" rx="6" fill="#FAE8DF" stroke="#A44735" stroke-opacity="0.38"/>
+    <text x="20" y="34" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">冷静指数</text>
+  </g>
+  <g transform="translate(480 535)">
+    <rect width="152" height="54" rx="6" fill="#E8EDF4" stroke="#36537A" stroke-opacity="0.34"/>
+    <text x="20" y="34" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">展开指标</text>
+  </g>
 
-    <g transform="translate(38 180)">
-      <rect width="254" height="78" rx="12" fill="#FFFFFF" stroke="#D9E1EA"/>
-      <text x="16" y="30" fill="#697586" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13">市场日</text>
-      <text x="92" y="30" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="850">收盘快照</text>
-      <text x="16" y="58" fill="#697586" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13">数据范围</text>
-      <text x="92" y="58" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="850">活跃A股池</text>
+  <g transform="translate(727 74)">
+    <rect x="0" y="0" width="330" height="612" rx="36" fill="#24201A"/>
+    <rect x="16" y="18" width="298" height="576" rx="26" fill="#F6EEDC"/>
+    <rect x="16" y="18" width="298" height="576" rx="26" fill="url(#fiber)" opacity="0.65"/>
+    <rect x="132" y="34" width="66" height="8" rx="4" fill="#BFAE89"/>
+    <text x="38" y="82" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">BadGuard · 小纸条</text>
+    <text x="38" y="119" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="31" font-weight="900">散户看盘</text>
+    <text x="38" y="150" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="700">收盘后 · 日线级别 · 不喊买卖</text>
+
+    <g transform="translate(38 176)">
+      <rect width="254" height="72" rx="7" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+      <text x="16" y="29" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">市场日</text>
+      <text x="92" y="29" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">收盘快照</text>
+      <text x="16" y="55" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">数据范围</text>
+      <text x="92" y="55" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">活跃A股池</text>
     </g>
 
-    <g transform="translate(38 282)">
-      <rect width="254" height="70" rx="12" fill="#FFFFFF" stroke="#D9E1EA"/>
-      <rect x="16" y="18" width="48" height="24" rx="12" fill="#E7F5EF"/>
-      <text x="25" y="35" fill="#12805C" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">观察</text>
-      <text x="78" y="30" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="850">低位反弹观察</text>
-      <rect x="78" y="46" width="142" height="8" rx="4" fill="#C8D8EE"/>
-      <rect x="78" y="46" width="104" height="8" rx="4" fill="#2459A6"/>
+    <g transform="translate(38 276)">
+      <rect width="254" height="62" rx="7" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+      <rect x="16" y="16" width="48" height="26" rx="5" fill="#FFFAF0" stroke="#2F6F5F" stroke-opacity="0.72"/>
+      <text x="25" y="34" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">观察</text>
+      <text x="78" y="28" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="18" font-weight="900">今天又来抄底啦</text>
+      <rect x="78" y="43" width="136" height="7" rx="3.5" fill="#D8C8A6"/>
+      <rect x="78" y="43" width="102" height="7" rx="3.5" fill="#2F6F5F"/>
     </g>
 
-    <g transform="translate(38 366)">
-      <rect width="254" height="70" rx="12" fill="#FFFFFF" stroke="#D9E1EA"/>
-      <rect x="16" y="18" width="48" height="24" rx="12" fill="#E7F5EF"/>
-      <text x="25" y="35" fill="#12805C" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">观察</text>
-      <text x="78" y="30" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="850">趋势转强观察</text>
-      <rect x="78" y="46" width="142" height="8" rx="4" fill="#C8D8EE"/>
-      <rect x="78" y="46" width="118" height="8" rx="4" fill="#2459A6"/>
+    <g transform="translate(38 352)">
+      <rect width="254" height="62" rx="7" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+      <rect x="16" y="16" width="48" height="26" rx="5" fill="#FFFAF0" stroke="#2F6F5F" stroke-opacity="0.72"/>
+      <text x="25" y="34" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">观察</text>
+      <text x="78" y="28" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="18" font-weight="900">勇敢散户向前冲</text>
+      <rect x="78" y="43" width="136" height="7" rx="3.5" fill="#D8C8A6"/>
+      <rect x="78" y="43" width="116" height="7" rx="3.5" fill="#2F6F5F"/>
     </g>
 
-    <g transform="translate(38 450)">
-      <rect width="254" height="70" rx="12" fill="#FFFFFF" stroke="#D9E1EA"/>
-      <rect x="16" y="18" width="48" height="24" rx="12" fill="#E7F5EF"/>
-      <text x="25" y="35" fill="#12805C" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">观察</text>
-      <text x="78" y="30" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="850">超跌修复观察</text>
-      <rect x="78" y="46" width="142" height="8" rx="4" fill="#C8D8EE"/>
-      <rect x="78" y="46" width="96" height="8" rx="4" fill="#2459A6"/>
+    <g transform="translate(38 428)">
+      <rect width="254" height="62" rx="7" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+      <rect x="16" y="16" width="48" height="26" rx="5" fill="#FFFAF0" stroke="#2F6F5F" stroke-opacity="0.72"/>
+      <text x="25" y="34" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">观察</text>
+      <text x="78" y="28" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="18" font-weight="900">跌麻了，先看修复</text>
+      <rect x="78" y="43" width="136" height="7" rx="3.5" fill="#D8C8A6"/>
+      <rect x="78" y="43" width="92" height="7" rx="3.5" fill="#2F6F5F"/>
     </g>
 
-    <g transform="translate(38 534)">
-      <rect width="254" height="42" rx="12" fill="#FFF1F0" stroke="#F4B9B5"/>
-      <rect x="16" y="10" width="48" height="22" rx="11" fill="#FDECEB"/>
-      <text x="25" y="26" fill="#B42318" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">谨慎</text>
-      <text x="78" y="27" fill="#182230" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="850">风险过滤榜</text>
+    <g transform="translate(38 504)">
+      <rect width="254" height="58" rx="7" fill="#FFF1EA" stroke="#A44735" stroke-opacity="0.34"/>
+      <rect x="16" y="15" width="48" height="26" rx="5" fill="#FFFAF0" stroke="#A44735" stroke-opacity="0.75"/>
+      <text x="25" y="33" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">谨慎</text>
+      <text x="78" y="32" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="18" font-weight="900">别冲了，先喝口水</text>
     </g>
   </g>
 </svg>
