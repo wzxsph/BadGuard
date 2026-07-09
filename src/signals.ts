@@ -51,7 +51,14 @@ export function buildSnapshotFromStocks(
     }
   });
 
-  return assembleSnapshot(rows, formatChinaDate(now), now.toISOString(), "provider", sourceLabel);
+  return assembleSnapshot(rows, formatChinaDate(now), now.toISOString(), "provider", sourceLabel, {
+    scanLimit: stocks.length,
+    stockCount: stocks.length,
+    universeSource: "provider",
+    historySource: "provider",
+    failureCount: 0,
+    buildMode: "local"
+  });
 }
 
 export function assembleSnapshot(
@@ -59,29 +66,47 @@ export function assembleSnapshot(
   marketDate: string,
   refreshedAt: string,
   source: SignalSnapshot["source"],
-  sourceLabel: string
+  sourceLabel: string,
+  meta: SignalSnapshot["meta"] = {
+    scanLimit: 0,
+    stockCount: 0,
+    universeSource: "bundled",
+    historySource: "bundled",
+    failureCount: 0,
+    buildMode: "bundled"
+  }
 ): SignalSnapshot {
   const boards: SignalBoard[] = SIGNAL_DEFINITIONS.map((definition) => ({
     ...definition,
     rows: rows
       .filter((row) => row.signalId === definition.id)
-      .sort((left, right) => right.signalStrength - left.signalStrength)
+      .sort(compareRows)
   }));
 
   const topRows = rows
     .filter((row) => OBSERVATION_SIGNAL_IDS.has(row.signalId))
-    .sort((left, right) => right.signalStrength - left.signalStrength);
+    .sort(compareRows);
 
   return {
     marketDate,
     refreshedAt,
     source,
     sourceLabel,
+    meta,
     boards,
     topRows,
     philosophy: PHILOSOPHY,
     disclaimers: DISCLAIMERS
   };
+}
+
+export function compareRows(left: SignalRow, right: SignalRow): number {
+  const strengthDelta = right.signalStrength - left.signalStrength;
+  if (strengthDelta !== 0) {
+    return strengthDelta;
+  }
+
+  return left.code.localeCompare(right.code);
 }
 
 export function formatChinaDate(date: Date): string {

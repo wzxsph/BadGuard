@@ -76,11 +76,21 @@ export interface SignalBoard {
   rows: SignalRow[];
 }
 
+export interface SnapshotMeta {
+  scanLimit: number;
+  stockCount: number;
+  universeSource: "code-list" | "realtime" | "provider" | "bundled";
+  historySource: "sina" | "eastmoney" | "provider" | "bundled";
+  failureCount: number;
+  buildMode: "production" | "staging" | "local" | "bundled";
+}
+
 export interface SignalSnapshot {
   marketDate: string;
   refreshedAt: string;
   source: DataSourceKind;
   sourceLabel: string;
+  meta: SnapshotMeta;
   boards: SignalBoard[];
   topRows: SignalRow[];
   philosophy: string;

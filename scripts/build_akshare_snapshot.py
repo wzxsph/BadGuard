@@ -110,7 +110,19 @@ def main() -> None:
         enrich_row_industries(rows, end_date)
 
     source_label = "AkShare 日线（新浪优先，东财备用）" if args.history_source == "sina" else "AkShare 日线（东财优先，新浪备用）"
-    snapshot = assemble_snapshot(rows, args.per_board, source_label)
+    snapshot = assemble_snapshot(
+        rows,
+        args.per_board,
+        source_label,
+        {
+            "scanLimit": args.limit,
+            "stockCount": len(stocks),
+            "universeSource": args.universe_source,
+            "historySource": args.history_source,
+            "failureCount": len(failures),
+            "buildMode": args.build_mode,
+        },
+    )
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
@@ -136,6 +148,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--universe-source", default="code-list", choices=["code-list", "realtime"], help="Use daily code list by default; realtime may depend on Eastmoney availability.")
     parser.add_argument("--history-source", default="sina", choices=["sina", "eastmoney"], help="Daily history source preference.")
     parser.add_argument("--skip-industry-map", action="store_true", help="Skip post-signal industry lookup and use 未分类.")
+    parser.add_argument("--build-mode", default="local", choices=["production", "staging", "local"], help="Snapshot publishing mode metadata.")
     return parser.parse_args()
 
 
@@ -575,8 +588,8 @@ def score_risk(current: pd.Series, previous: pd.Series) -> float:
     return 48 + len(tags) * 8 + drop + volume_penalty + high_kdj_bonus
 
 
-def assemble_snapshot(rows: list[dict[str, Any]], per_board: int, source_label: str) -> dict[str, Any]:
-    rows = sorted(rows, key=lambda item: item["signalStrength"], reverse=True)
+def assemble_snapshot(rows: list[dict[str, Any]], per_board: int, source_label: str, meta: dict[str, Any]) -> dict[str, Any]:
+    rows = sorted(rows, key=row_sort_key)
     boards: list[dict[str, Any]] = []
 
     for definition in SIGNAL_DEFINITIONS:
@@ -584,7 +597,7 @@ def assemble_snapshot(rows: list[dict[str, Any]], per_board: int, source_label: 
         boards.append({**definition, "rows": board_rows})
 
     top_rows = [row for board in boards for row in board["rows"] if row["signalId"] in OBSERVATION_SIGNAL_IDS]
-    top_rows = sorted(top_rows, key=lambda item: item["signalStrength"], reverse=True)
+    top_rows = sorted(top_rows, key=row_sort_key)
     market_date = max((row["triggerDate"] for row in top_rows), default=datetime.now(CHINA_TZ).strftime("%Y-%m-%d"))
 
     return {
@@ -592,11 +605,16 @@ def assemble_snapshot(rows: list[dict[str, Any]], per_board: int, source_label: 
         "refreshedAt": datetime.now(CHINA_TZ).isoformat(),
         "source": "provider",
         "sourceLabel": source_label,
+        "meta": meta,
         "boards": boards,
         "topRows": top_rows,
         "philosophy": PHILOSOPHY,
         "disclaimers": DISCLAIMERS,
     }
+
+
+def row_sort_key(row: dict[str, Any]) -> tuple[int, str]:
+    return (-int(row["signalStrength"]), str(row["code"]))
 
 
 def calculate_return(frame: pd.DataFrame, lookback: int) -> float:

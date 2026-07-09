@@ -20,6 +20,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
       <div><dt>市场日</dt><dd>${escapeHtml(snapshot.marketDate)}</dd></div>
       <div><dt>更新时间</dt><dd>${formatDateTime(snapshot.refreshedAt)}</dd></div>
       <div><dt>数据源</dt><dd>${escapeHtml(snapshot.sourceLabel)}</dd></div>
+      <div><dt>数据范围</dt><dd>${escapeHtml(formatDataScope(snapshot))}</dd></div>
     </dl>
   </header>
 
@@ -141,6 +142,26 @@ function formatDateTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function formatDataScope(snapshot: SignalSnapshot): string {
+  const meta = snapshot.meta;
+  if (!meta) {
+    return "最近快照";
+  }
+
+  const poolLabel = meta.universeSource === "realtime"
+    ? `活跃A股前${meta.scanLimit || meta.stockCount}只`
+    : meta.universeSource === "code-list"
+      ? meta.scanLimit > 0
+        ? `固定代码池前${meta.scanLimit}只`
+        : "固定代码池全量"
+      : meta.universeSource === "provider"
+        ? "外部行情源"
+        : "随代码快照";
+
+  const modeLabel = meta.buildMode === "production" ? "生产" : meta.buildMode === "staging" ? "调试" : "本地";
+  return `${poolLabel} · ${modeLabel}`;
 }
 
 function returnClass(value: number): string {

@@ -10,6 +10,9 @@ export interface Env {
 }
 
 const CACHE_KEY = "latest-signal-snapshot";
+export const LATEST_SIGNAL_SNAPSHOT_KEY = CACHE_KEY;
+export const STAGING_SIGNAL_SNAPSHOT_KEY = "staging-signal-snapshot";
+export const DATED_SIGNAL_SNAPSHOT_PREFIX = "signal-snapshot:";
 
 export async function getSnapshot(env: Env, now = new Date()): Promise<SignalSnapshot> {
   const cached = await readCachedSnapshot(env);

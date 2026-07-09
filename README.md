@@ -4,7 +4,7 @@
 
 打开就看，不用选条件，不用研究一堆按钮，也不用在选股器里迷路。BadGuard 每天收盘后把 A 股日线里的几个常见技术信号整理成 4 个固定榜单，只写“观察 / 谨慎”，不写“买入 / 卖出”。
 
-![BadGuard 手机竖屏预览](docs/preview.png)
+![BadGuard 产品预览](docs/preview.svg)
 
 ## 它想解决什么
 
@@ -44,10 +44,10 @@ KDJ / MACD / RSI 的具体数值默认收起来，点“查看详情”再看。
 
 1. GitHub Actions 在北京时间交易日 15:30 运行 AkShare 脚本。
 2. 默认扫描成交额靠前的 1000 只活跃 A 股，生成 `data/latest.json`。
-3. Actions 把快照上传到 Cloudflare Workers KV 的 `latest-signal-snapshot`。
-4. Worker 读取 KV 渲染页面；没有 KV 时读取随代码部署的最近快照。
+3. Actions 先写入日期快照 `signal-snapshot:YYYY-MM-DD`，再更新 `latest-signal-snapshot`。
+4. Worker 读取 `latest-signal-snapshot` 渲染页面；没有 KV 时读取随代码部署的最近快照。
 
-手动触发 `Refresh AkShare Signals` 时可以调整 `scan_limit`，填 `0` 可尝试全市场扫描。全市场会更慢，耐心也是一种指标。
+同一个市场日的生产快照默认不覆盖，避免同一天数据因为调试参数变化而来回跳。手动触发 `Refresh AkShare Signals` 默认只写 `staging-signal-snapshot`，可以调整 `scan_limit` 做验证；只有显式设置 `publish_production=true`，并在需要重发同日数据时设置 `force_publish=true`，才会写入生产快照。全市场扫描可以填 `scan_limit=0`，它会更慢，耐心也是一种指标。
 
 ## 本地运行
 
