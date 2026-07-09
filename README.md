@@ -78,8 +78,8 @@ npx wrangler kv namespace create SIGNAL_KV --preview
 当前部署使用的值：
 
 - `CLOUDFLARE_ACCOUNT_ID`: `c150f9a81fd3d95a9c31d5751c99eabc`
-- `SIGNAL_KV id`: `待 Setup Cloudflare 工作流写入`
-- `SIGNAL_KV preview_id`: `待 Setup Cloudflare 工作流写入`
+- `SIGNAL_KV id`: `b1aa99421784423cb2669d98ffb302eb`
+- `SIGNAL_KV preview_id`: `f20d6971ccb24ec68ae81768e1f0ca8e`
 - `CLOUDFLARE_API_TOKEN`: 在 Cloudflare Dashboard 创建，至少需要 Workers Scripts 写入和 Workers KV 写入权限
 
 5. GitHub Actions：
