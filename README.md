@@ -96,8 +96,6 @@ npx wrangler kv namespace create SIGNAL_KV --preview
 npm run deploy
 ```
 
-部署完成后，把 README 顶部的体验链接替换成实际 Workers.dev 链接。
-
 ## API
 
 - `GET /api/signals`：返回当前信号快照
