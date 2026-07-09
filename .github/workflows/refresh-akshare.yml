@@ -164,21 +164,21 @@ jobs:
 
           if [ "$VERIFY_KEY" = "staging-signal-snapshot" ]; then
             npx wrangler kv key get "$VERIFY_KEY" --namespace-id "$KV_NAMESPACE_ID" --remote >/tmp/badguard-verify.json
-            node --input-type=module <<'JS'
-            import fs from 'node:fs/promises';
+            node --input-type=module -e '
+          import fs from "node:fs";
 
-            const snapshot = JSON.parse(await fs.readFile('/tmp/badguard-verify.json', 'utf8'));
-            console.log(JSON.stringify({
-              key: process.env.VERIFY_KEY,
-              marketDate: snapshot.marketDate,
-              topRows: snapshot.topRows.length,
-              buildMode: snapshot.meta?.buildMode
-            }, null, 2));
+          const snapshot = JSON.parse(fs.readFileSync("/tmp/badguard-verify.json", "utf8"));
+          console.log(JSON.stringify({
+            key: process.env.VERIFY_KEY,
+            marketDate: snapshot.marketDate,
+            topRows: snapshot.topRows.length,
+            buildMode: snapshot.meta?.buildMode
+          }, null, 2));
 
-            if (snapshot.meta?.buildMode !== 'staging') {
-              throw new Error('staging verification expected buildMode=staging');
-            }
-            JS
+          if (snapshot.meta?.buildMode !== "staging") {
+            throw new Error("staging verification expected buildMode=staging");
+          }
+          '
             exit 0
           fi
 
