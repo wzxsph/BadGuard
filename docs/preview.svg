@@ -35,11 +35,11 @@
 
   <g transform="translate(112 535)">
     <rect width="164" height="54" rx="6" fill="#E6F1EA" stroke="#2F6F5F" stroke-opacity="0.38"/>
-    <text x="20" y="34" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">围观优先级</text>
+    <text x="20" y="34" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">结构确认分</text>
   </g>
   <g transform="translate(296 535)">
     <rect width="164" height="54" rx="6" fill="#FAE8DF" stroke="#A44735" stroke-opacity="0.38"/>
-    <text x="20" y="34" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">冷静指数</text>
+    <text x="20" y="34" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="19" font-weight="900">风险强度</text>
   </g>
   <g transform="translate(480 535)">
     <rect width="152" height="54" rx="6" fill="#E8EDF4" stroke="#36537A" stroke-opacity="0.34"/>

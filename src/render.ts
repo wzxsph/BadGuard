@@ -17,7 +17,7 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
     summary: "低位刚有点动静，量也跟着探头。可以围观，别急着把键盘拍冒烟。",
     technical: "日线 KDJ 在 20 附近或以下金叉，且成交量放大。",
     mood: "地板附近有人敲门，但门后是不是机会，还得看后续确认。",
-    scoreLabel: "围观优先级"
+    scoreLabel: "结构确认分"
   },
   "trend-strength": {
     title: "勇敢散户向前冲",
@@ -25,7 +25,7 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
     summary: "趋势像是把鞋带系上了，但冲之前先看看路面是不是湿的。",
     technical: "MACD 金叉，并且股价重新站回 5 日和 10 日均线。",
     mood: "结构开始像那么回事了，先记一笔，别把记一笔理解成梭哈。",
-    scoreLabel: "围观优先级"
+    scoreLabel: "结构确认分"
   },
   "oversold-repair": {
     title: "跌麻了，先看修复",
@@ -33,7 +33,7 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
     summary: "从地板上坐起来不等于马上起飞，但至少不是继续躺平。",
     technical: "RSI 从低位回升，同时价格从 BOLL 下轨附近收回。",
     mood: "修复是修复，反转是反转，中间隔着散户最容易脑补的一条河。",
-    scoreLabel: "围观优先级"
+    scoreLabel: "结构确认分"
   },
   "risk-filter": {
     title: "别冲了，先喝口水",
@@ -41,11 +41,13 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
     summary: "市场递来一张小纸条：手慢一点，仓位轻一点，心跳稳一点。",
     technical: "近期跌破均线、放量下跌，或 KDJ 高位死叉。",
     mood: "不是说世界末日，只是这会儿更适合把手从下单按钮旁边挪开。",
-    scoreLabel: "冷静指数"
+    scoreLabel: "风险强度"
   }
 };
 
 const COMPANY_PROFILES = companyProfilesJson as Record<string, CompanyProfile>;
+const INITIAL_VISIBLE_CARDS = 5;
+const CARD_REVEAL_STEP = 10;
 
 export function renderHtml(snapshot: SignalSnapshot): string {
   return `<!doctype html>
@@ -81,13 +83,13 @@ export function renderHtml(snapshot: SignalSnapshot): string {
     <section class="section section--summary" id="daily-summary">
       <div class="section__head">
         <div>
-          <p class="eyebrow">观察类 · 上行观察优先级</p>
+          <p class="eyebrow">观察类 · 结构确认分</p>
           <h2>今日围观总览</h2>
-          <p class="summary">只汇总观察类信号，按上行观察优先级排序；风险过滤榜不进这个小本本。</p>
+          <p class="summary">只汇总观察类信号，按结构确认分排序；风险过滤榜不进这个小本本。</p>
         </div>
         <span class="count">${snapshot.topRows.length} 条</span>
       </div>
-      ${renderCards(snapshot.topRows, true, "summary")}
+      ${renderCards(snapshot.topRows, true, "summary", "daily-summary-signals")}
     </section>
   </main>
 
@@ -97,6 +99,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
       ${snapshot.disclaimers.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
     </div>
   </footer>
+  <script>${JS}</script>
 </body>
 </html>`;
 }
@@ -173,26 +176,36 @@ function renderBoard(board: SignalBoard): string {
       </div>
       <span class="stance stance--${board.stance === "谨慎" ? "caution" : "observe"}">${board.stance}</span>
     </div>
-    ${renderCards(board.rows, false, "board")}
+    ${renderCards(board.rows, false, "board", `${board.id}-signals`)}
   </section>`;
 }
 
-function renderCards(rows: SignalRow[], showSignal: boolean, variant: "board" | "summary"): string {
+function renderCards(rows: SignalRow[], showSignal: boolean, variant: "board" | "summary", listId: string): string {
   if (rows.length === 0) {
     return `<div class="empty">今日这张纸条空空如也，市场暂时没递话。</div>`;
   }
 
-  return `<div class="signal-list">
-    ${rows.map((row) => renderCard(row, showSignal, variant)).join("")}
+  const moreButton = rows.length > INITIAL_VISIBLE_CARDS
+    ? `<button class="show-more" type="button" data-progress-more aria-controls="${escapeHtml(listId)}">
+        <span>【展示更多】</span>
+        <small data-progress-hint>再看 ${Math.min(CARD_REVEAL_STEP, rows.length - INITIAL_VISIBLE_CARDS)} 个，还剩 ${rows.length - INITIAL_VISIBLE_CARDS} 个</small>
+      </button>`
+    : "";
+
+  return `<div class="signal-list-shell" data-progressive-list data-step="${CARD_REVEAL_STEP}">
+    <div class="signal-list" id="${escapeHtml(listId)}">
+      ${rows.map((row, index) => renderCard(row, showSignal, variant, index >= INITIAL_VISIBLE_CARDS)).join("")}
+    </div>
+    ${moreButton}
   </div>`;
 }
 
-function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "summary"): string {
+function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "summary", hidden: boolean): string {
   const stanceClass = row.stance === "谨慎" ? "caution" : "observe";
   const copy = SIGNAL_COPY[row.signalId];
   const companyProfile = getCompanyProfile(row);
 
-  return `<article class="signal-card" id="${cardId(row, variant)}">
+  return `<article class="signal-card" id="${cardId(row, variant)}" data-progress-card${hidden ? " hidden" : ""}>
     <div class="card-topline">
       <div class="stock-title">
         <strong>${escapeHtml(row.name)}</strong>
@@ -204,10 +217,14 @@ function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "sum
     <div class="signal-name">${escapeHtml(showSignal ? copy.title : copy.mood)}</div>
 
     <dl class="card-metrics">
-      <div><dt>触发日期</dt><dd>${escapeHtml(row.triggerDate)}</dd></div>
-      <div><dt>成交额</dt><dd>${formatAmount(row.amount)}</dd></div>
-      <div><dt>所属行业</dt><dd>${escapeHtml(row.industry)}</dd></div>
-      <div><dt>近5/20日</dt><dd><span class="${returnClass(row.change5d)}">${formatPercent(row.change5d)}</span> / <span class="${returnClass(row.change20d)}">${formatPercent(row.change20d)}</span></dd></div>
+      <div class="metric-pair metric-pair--date-return">
+        <div><dt>触发日期</dt><dd>${escapeHtml(row.triggerDate)}</dd></div>
+        <div><dt>近5/20日</dt><dd><span class="${returnClass(row.change5d)}">${formatPercent(row.change5d)}</span> / <span class="${returnClass(row.change20d)}">${formatPercent(row.change20d)}</span></dd></div>
+      </div>
+      <div class="metric-pair metric-pair--amount-industry">
+        <div><dt>成交额</dt><dd>${formatAmount(row.amount)}</dd></div>
+        <div><dt>所属行业</dt><dd>${escapeHtml(row.industry)}</dd></div>
+      </div>
     </dl>
 
     <div class="tag-row" aria-label="风险标签">
@@ -466,7 +483,7 @@ html {
 
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   background-color: var(--rice);
   background-image:
     repeating-linear-gradient(0deg, rgba(47, 38, 24, 0.035) 0 1px, transparent 1px 7px),
@@ -805,6 +822,44 @@ main {
   gap: 14px;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+.signal-list-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.show-more {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 12px;
+  color: var(--indigo);
+  border: 1px solid rgba(54, 83, 122, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 250, 240, 0.86);
+  box-shadow: 0 5px 12px rgba(60, 43, 20, 0.08);
+  cursor: pointer;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-weight: 900;
+}
+
+.show-more:hover {
+  color: var(--cinnabar);
+  border-color: rgba(164, 71, 53, 0.5);
+  background: rgba(250, 232, 223, 0.72);
+}
+
+.show-more small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
 .signal-card {
   position: relative;
   display: grid;
@@ -872,9 +927,27 @@ main {
 .card-metrics,
 .indicator-detail {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px 12px;
   margin: 0;
+}
+
+.card-metrics {
+  grid-template-columns: 1fr;
+}
+
+.indicator-detail {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metric-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.metric-pair--amount-industry {
+  grid-template-columns: minmax(92px, 0.8fr) minmax(0, 1.2fr);
 }
 
 .card-metrics div,
@@ -1126,8 +1199,87 @@ meter::-webkit-meter-optimum-value {
     padding: 13px;
   }
 
-  .card-metrics {
-    grid-template-columns: 1fr;
+  .metric-pair {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 8px;
   }
 }
+`;
+
+const JS = `
+(() => {
+  const getCards = (wrapper) => Array.from(wrapper.querySelectorAll("[data-progress-card]"));
+
+  const updateButton = (wrapper) => {
+    const button = wrapper.querySelector("[data-progress-more]");
+    if (!button) {
+      return;
+    }
+
+    const cards = getCards(wrapper);
+    const hiddenCount = cards.filter((card) => card.hidden).length;
+    if (hiddenCount <= 0) {
+      button.hidden = true;
+      return;
+    }
+
+    const step = Number(wrapper.dataset.step || 10);
+    const nextCount = Math.min(step, hiddenCount);
+    const hint = button.querySelector("[data-progress-hint]");
+    button.hidden = false;
+    if (hint) {
+      hint.textContent = "再看 " + nextCount + " 个，还剩 " + hiddenCount + " 个";
+    }
+  };
+
+  const revealCards = (wrapper, targetIndex) => {
+    const cards = getCards(wrapper);
+    const firstHiddenIndex = cards.findIndex((card) => card.hidden);
+    const visibleCount = firstHiddenIndex === -1 ? cards.length : firstHiddenIndex;
+    const step = Number(wrapper.dataset.step || 10);
+    const nextVisibleCount = typeof targetIndex === "number"
+      ? Math.max(visibleCount, targetIndex + 1)
+      : Math.min(cards.length, visibleCount + step);
+
+    cards.slice(0, nextVisibleCount).forEach((card) => {
+      card.hidden = false;
+    });
+    updateButton(wrapper);
+  };
+
+  document.querySelectorAll("[data-progressive-list]").forEach(updateButton);
+
+  document.addEventListener("click", (event) => {
+    const moreButton = event.target.closest("[data-progress-more]");
+    if (moreButton) {
+      const wrapper = moreButton.closest("[data-progressive-list]");
+      if (wrapper) {
+        revealCards(wrapper);
+      }
+      return;
+    }
+
+    const anchor = event.target.closest('a[href^="#stock-"], a[href^="#summary-"]');
+    if (!anchor) {
+      return;
+    }
+
+    const id = decodeURIComponent(anchor.getAttribute("href").slice(1));
+    const target = document.getElementById(id);
+    if (!target || !target.hidden) {
+      return;
+    }
+
+    const wrapper = target.closest("[data-progressive-list]");
+    if (!wrapper) {
+      return;
+    }
+
+    event.preventDefault();
+    const targetIndex = getCards(wrapper).indexOf(target);
+    revealCards(wrapper, targetIndex);
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+    history.replaceState(null, "", "#" + id);
+  });
+})();
 `;

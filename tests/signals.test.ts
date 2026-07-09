@@ -86,6 +86,35 @@ describe("daily technical signal board", () => {
     expect(new Set(snapshot.topRows.map((row) => row.stance))).toEqual(new Set(["观察"]));
   });
 
+  it("shows only five cards per list before progressive expansion", () => {
+    const html = renderHtml(snapshot);
+    const boardWithMoreRows = snapshot.boards.find((board) => board.rows.length > 5);
+    expect(boardWithMoreRows).toBeTruthy();
+
+    const sectionStart = html.indexOf(`<section class="section section--board" id="${boardWithMoreRows!.id}">`);
+    const nextBoardStart = html.indexOf('<section class="section section--board"', sectionStart + 1);
+    const summaryStart = html.indexOf('<section class="section section--summary"', sectionStart + 1);
+    const sectionEnd = [nextBoardStart, summaryStart].filter((index) => index > sectionStart).sort((left, right) => left - right)[0];
+    const sectionHtml = html.slice(sectionStart, sectionEnd);
+
+    const cardTags = [...sectionHtml.matchAll(/<article class="signal-card"[^>]*>/g)].map((match) => match[0]);
+
+    expect(cardTags).toHaveLength(boardWithMoreRows!.rows.length);
+    expect(cardTags.slice(0, 5).every((tag) => !tag.includes(" hidden"))).toBe(true);
+    expect(cardTags.slice(5).every((tag) => tag.includes(" hidden"))).toBe(true);
+    expect(sectionHtml).toContain("【展示更多】");
+    expect(sectionHtml).toContain("data-progress-more");
+  });
+
+  it("groups card metrics into the requested two rows", () => {
+    const html = renderHtml(snapshot);
+    const cardMatch = html.match(/<article class="signal-card"[^>]*>([\s\S]*?)<\/article>/);
+    expect(cardMatch).not.toBeNull();
+
+    expect(cardMatch![1]).toMatch(/<div class="metric-pair metric-pair--date-return">[\s\S]*<dt>触发日期<\/dt>[\s\S]*<dt>近5\/20日<\/dt>/);
+    expect(cardMatch![1]).toMatch(/<div class="metric-pair metric-pair--amount-industry">[\s\S]*<dt>成交额<\/dt>[\s\S]*<dt>所属行业<\/dt>/);
+  });
+
   it("only uses observation-oriented stances in visible rows", () => {
     const stances = snapshot.boards.flatMap((board) => board.rows.map((row) => row.stance));
 
