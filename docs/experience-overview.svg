@@ -1,0 +1,55 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">BadGuard 首页阅读顺序示意</title>
+  <desc id="desc">A paper style diagram showing the product reading order: header, professional notes, company directory, four signal boards, and daily summary.</desc>
+  <defs>
+    <pattern id="fiber" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M0 6H20M8 0V20" stroke="#2D2317" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#3C2B14" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="700" fill="#F3EDDD"/>
+  <rect width="1200" height="700" fill="url(#fiber)" opacity="0.75"/>
+  <rect x="70" y="50" width="1060" height="600" rx="10" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28" filter="url(#shadow)"/>
+
+  <text x="112" y="112" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="900">BadGuard 体验流</text>
+  <text x="112" y="165" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="48" font-weight="900">打开网页，先看规则，再看纸条</text>
+  <text x="112" y="205" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="800">不筛选、不输入、不喊买卖，只把收盘后的市场状态摊开。</text>
+
+  <g transform="translate(112 270)">
+    <rect width="214" height="114" rx="8" fill="#E8EDF4" stroke="#36537A" stroke-opacity="0.32"/>
+    <text x="22" y="36" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="900">1 · 专业注解</text>
+    <text x="22" y="70" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="900">先冷静一下</text>
+    <text x="22" y="98" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="15">公式、阈值、边界</text>
+  </g>
+
+  <g transform="translate(358 270)">
+    <rect width="214" height="114" rx="8" fill="#F5E7C4" stroke="#9B7135" stroke-opacity="0.32"/>
+    <text x="22" y="36" fill="#9B7135" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="900">2 · 公司名目录</text>
+    <text x="22" y="70" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="900">只看名字</text>
+    <text x="22" y="98" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="15">30 个一批展开</text>
+  </g>
+
+  <g transform="translate(604 270)">
+    <rect width="214" height="114" rx="8" fill="#E6F1EA" stroke="#2F6F5F" stroke-opacity="0.34"/>
+    <text x="22" y="36" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="900">3 · 四张榜单</text>
+    <text x="22" y="70" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="900">观察 / 谨慎</text>
+    <text x="22" y="98" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="15">每类先露 5 张</text>
+  </g>
+
+  <g transform="translate(850 270)">
+    <rect width="214" height="114" rx="8" fill="#FAE8DF" stroke="#A44735" stroke-opacity="0.34"/>
+    <text x="22" y="36" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="900">4 · 今日总览</text>
+    <text x="22" y="70" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="900">结构确认分</text>
+    <text x="22" y="98" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="15">观察类统一排序</text>
+  </g>
+
+  <path d="M330 327H352M576 327H598M822 327H844" stroke="#A44735" stroke-width="4" stroke-linecap="round"/>
+
+  <g transform="translate(112 450)">
+    <rect width="952" height="96" rx="8" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.22"/>
+    <text x="26" y="39" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="25" font-weight="900">最终效果</text>
+    <text x="26" y="72" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="800">新手打开首页，就能按“规则说明 → 公司索引 → 信号卡片 → 详情小抄”的顺序读下去。</text>
+  </g>
+</svg>

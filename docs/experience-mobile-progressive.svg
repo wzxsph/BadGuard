@@ -1,0 +1,60 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">BadGuard 移动端渐进展开示意</title>
+  <desc id="desc">A mobile-first diagram showing progressive disclosure for company directory items and signal cards without any real stock names.</desc>
+  <defs>
+    <pattern id="fiber" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M0 5H18M7 0V18" stroke="#2D2317" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#3C2B14" flood-opacity="0.14"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="700" fill="#F3EDDD"/>
+  <rect width="1200" height="700" fill="url(#fiber)" opacity="0.7"/>
+  <text x="116" y="98" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="900">移动端阅读节奏</text>
+  <text x="116" y="151" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="48" font-weight="900">不要一次塞满屏幕，慢慢看</text>
+
+  <g transform="translate(156 205)" filter="url(#shadow)">
+    <rect width="260" height="404" rx="30" fill="#24201A"/>
+    <rect x="14" y="18" width="232" height="368" rx="22" fill="#F6EEDC"/>
+    <text x="34" y="64" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">公司名目录</text>
+    <text x="34" y="94" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="25" font-weight="900">只看名字</text>
+    <g transform="translate(34 122)">
+      <rect width="72" height="28" rx="5" fill="#F5E7C4"/>
+      <text x="13" y="19" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="900">公司名称</text>
+      <rect x="82" width="72" height="28" rx="5" fill="#F5E7C4"/>
+      <text x="95" y="19" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="900">公司名称</text>
+      <rect y="40" width="72" height="28" rx="5" fill="#F5E7C4"/>
+      <text x="13" y="59" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="900">公司名称</text>
+      <rect x="82" y="40" width="72" height="28" rx="5" fill="#F5E7C4"/>
+      <text x="95" y="59" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="900">公司名称</text>
+    </g>
+    <rect x="34" y="230" width="152" height="36" rx="6" fill="#FFFAF0" stroke="#36537A" stroke-opacity="0.32"/>
+    <text x="49" y="253" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">【展示更多】</text>
+    <text x="34" y="304" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">目录：先 30 个</text>
+    <text x="34" y="330" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="800">每次再展开 30 个</text>
+  </g>
+
+  <g transform="translate(470 205)" filter="url(#shadow)">
+    <rect width="260" height="404" rx="30" fill="#24201A"/>
+    <rect x="14" y="18" width="232" height="368" rx="22" fill="#F6EEDC"/>
+    <text x="34" y="64" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">观察榜单</text>
+    <rect x="34" y="86" width="192" height="86" rx="8" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+    <text x="50" y="116" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="19" font-weight="900">信号卡片</text>
+    <text x="50" y="145" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="800">触发日期 · 近5/20日</text>
+    <rect x="34" y="188" width="192" height="86" rx="8" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+    <text x="50" y="218" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="19" font-weight="900">信号卡片</text>
+    <text x="50" y="247" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="12" font-weight="800">成交额 · 行业标签</text>
+    <rect x="34" y="302" width="152" height="36" rx="6" fill="#FFFAF0" stroke="#36537A" stroke-opacity="0.32"/>
+    <text x="49" y="325" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">【展示更多】</text>
+  </g>
+
+  <g transform="translate(802 242)">
+    <rect width="270" height="270" rx="10" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28" filter="url(#shadow)"/>
+    <text x="28" y="51" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="900">展开规则</text>
+    <text x="28" y="96" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="900">目录：30 + 30 + ...</text>
+    <text x="28" y="142" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="900">榜单：5 + 10 + ...</text>
+    <text x="28" y="194" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="800">一屏只给够用的信息，</text>
+    <text x="28" y="224" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="800">剩下的交给好奇心。</text>
+  </g>
+</svg>

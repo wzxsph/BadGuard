@@ -76,8 +76,8 @@ export function renderHtml(snapshot: SignalSnapshot): string {
     </dl>
   </header>
 
-  ${renderCompanyDirectory(snapshot)}
   ${renderProfessionalNotes()}
+  ${renderCompanyDirectory(snapshot)}
 
   <main>
     ${snapshot.boards.map(renderBoard).join("")}

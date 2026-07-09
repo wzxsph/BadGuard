@@ -1,0 +1,63 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">BadGuard 信号卡片与详情示意</title>
+  <desc id="desc">A product diagram showing a generic signal card with grouped metrics and expandable details including a F10 company note and hidden indicators.</desc>
+  <defs>
+    <pattern id="fiber" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M0 5H18M7 0V18" stroke="#2D2317" stroke-opacity="0.045" stroke-width="1"/>
+    </pattern>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#3C2B14" flood-opacity="0.13"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="700" fill="#F3EDDD"/>
+  <rect width="1200" height="700" fill="url(#fiber)" opacity="0.72"/>
+  <text x="92" y="92" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="900">卡片怎么读</text>
+  <text x="92" y="145" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="48" font-weight="900">先看状态，想深挖再展开</text>
+
+  <g transform="translate(92 205)" filter="url(#shadow)">
+    <rect width="470" height="382" rx="10" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+    <rect x="24" y="24" width="66" height="30" rx="5" fill="#FFFAF0" stroke="#2F6F5F" stroke-opacity="0.75"/>
+    <text x="39" y="45" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="14" font-weight="900">观察</text>
+    <text x="112" y="47" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="26" font-weight="900">信号卡片</text>
+    <text x="24" y="91" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="900">结构正在改善，但别把观察理解成冲锋。</text>
+
+    <g transform="translate(24 126)">
+      <rect width="198" height="62" rx="7" fill="#F5E7C4" fill-opacity="0.55"/>
+      <text x="14" y="25" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">触发日期</text>
+      <text x="14" y="49" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">市场日</text>
+    </g>
+    <g transform="translate(244 126)">
+      <rect width="202" height="62" rx="7" fill="#F5E7C4" fill-opacity="0.55"/>
+      <text x="14" y="25" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">近5/20日</text>
+      <text x="14" y="49" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">短期 / 中期</text>
+    </g>
+    <g transform="translate(24 204)">
+      <rect width="198" height="62" rx="7" fill="#E8EDF4" fill-opacity="0.74"/>
+      <text x="14" y="25" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">成交额</text>
+      <text x="14" y="49" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">资金活跃度</text>
+    </g>
+    <g transform="translate(244 204)">
+      <rect width="202" height="62" rx="7" fill="#E8EDF4" fill-opacity="0.74"/>
+      <text x="14" y="25" fill="#736A5D" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="13" font-weight="900">所属行业</text>
+      <text x="14" y="49" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">行业标签</text>
+    </g>
+
+    <rect x="24" y="292" width="422" height="42" rx="6" fill="#E6F1EA" stroke="#2F6F5F" stroke-opacity="0.28"/>
+    <text x="42" y="319" fill="#2F6F5F" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">结构确认分 · 只用于排序，不代表收益承诺</text>
+    <text x="24" y="362" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="900">展开详情</text>
+  </g>
+
+  <g transform="translate(640 205)" filter="url(#shadow)">
+    <rect width="468" height="382" rx="10" fill="#FFFAF0" stroke="#6F5B3F" stroke-opacity="0.28"/>
+    <text x="28" y="49" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="20" font-weight="900">详情展开后</text>
+    <rect x="28" y="78" width="412" height="128" rx="8" fill="#FFFAF0" stroke="#36537A" stroke-opacity="0.24"/>
+    <text x="48" y="112" fill="#24201A" font-family="Songti SC, Noto Serif CJK SC, serif" font-size="24" font-weight="900">公司概况 F10 小抄</text>
+    <text x="48" y="146" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="800">主营业务 · 经营范围 · 公司小传</text>
+    <text x="48" y="176" fill="#4F473C" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="800">上市/成立 · 办公地 · 官网联系</text>
+
+    <rect x="28" y="232" width="412" height="98" rx="8" fill="#E8EDF4" stroke="#36537A" stroke-opacity="0.24"/>
+    <text x="48" y="266" fill="#24201A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="900">指标明细</text>
+    <text x="48" y="299" fill="#36537A" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="800">KDJ · MACD · RSI · 专业注解</text>
+    <text x="28" y="362" fill="#A44735" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="16" font-weight="900">默认收起，避免新手一打开就被数字围殴。</text>
+  </g>
+</svg>

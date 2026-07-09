@@ -78,7 +78,7 @@ describe("daily technical signal board", () => {
     const visibleLinkTags = directoryLinks.map((match) => match[0]);
 
     expect(html.indexOf('id="company-directory"')).toBeLessThan(html.indexOf('id="low-rebound"'));
-    expect(html.indexOf('id="company-directory"')).toBeLessThan(html.indexOf('class="professional-notes"'));
+    expect(html.indexOf('class="professional-notes"')).toBeLessThan(html.indexOf('id="company-directory"'));
     expect(visibleNames.length).toBeGreaterThan(0);
     expect(visibleNames.every((name) => !/\d{6}/.test(name))).toBe(true);
     expect(visibleLinkTags.slice(0, 30).every((tag) => !tag.includes(" hidden"))).toBe(true);
@@ -180,8 +180,27 @@ describe("daily technical signal board", () => {
     const readme = fs.readFileSync("README.md", "utf8");
 
     expect(readme).toContain("docs/preview.svg");
+    expect(readme).toContain("docs/experience-overview.svg");
+    expect(readme).toContain("docs/experience-card-detail.svg");
+    expect(readme).toContain("docs/experience-mobile-progressive.svg");
     expect(readme).not.toContain("docs/preview.png");
     expect(readme).not.toMatch(/c150f9|b1aa994|f20d697/);
+    expect(readme.indexOf("## 页面展示什么")).toBeLessThan(readme.indexOf("## 专业注解"));
+    expect(readme.indexOf("## 设计哲学")).toBeLessThan(readme.indexOf("## 专业注解"));
+  });
+
+  it("keeps experience diagrams free of concrete stock names and codes", () => {
+    const diagramText = [
+      "docs/experience-overview.svg",
+      "docs/experience-card-detail.svg",
+      "docs/experience-mobile-progressive.svg"
+    ].map((path) => fs.readFileSync(path, "utf8")).join("\n");
+    const snapshotNames = new Set(snapshot.boards.flatMap((board) => board.rows.map((row) => row.name)));
+
+    expect(diagramText).not.toMatch(/\d{6}/);
+    for (const name of snapshotNames) {
+      expect(diagramText).not.toContain(name);
+    }
   });
 });
 
