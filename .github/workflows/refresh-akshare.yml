@@ -1,0 +1,89 @@
+name: Refresh AkShare Signals
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 7 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-akshare-signals
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Python dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Build AkShare signal snapshot
+        run: python scripts/build_akshare_snapshot.py --output data/latest.json --max-workers 4 --sleep 0.08
+
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Validate snapshot
+        run: |
+          node --input-type=module <<'JS'
+          import fs from 'node:fs/promises';
+
+          const snapshot = JSON.parse(await fs.readFile('data/latest.json', 'utf8'));
+          const topKinds = new Set(snapshot.topRows.map((row) => row.signalId));
+
+          if (snapshot.source !== 'provider') {
+            throw new Error(`Unexpected source: ${snapshot.source}`);
+          }
+
+          if (snapshot.boards.length !== 4) {
+            throw new Error(`Expected 4 boards, got ${snapshot.boards.length}`);
+          }
+
+          if (topKinds.has('risk-filter')) {
+            throw new Error('risk-filter rows must not appear in topRows');
+          }
+
+          console.log(JSON.stringify({
+            marketDate: snapshot.marketDate,
+            topRows: snapshot.topRows.length,
+            boards: snapshot.boards.map((board) => [board.id, board.rows.length])
+          }, null, 2));
+          JS
+
+      - name: Upload snapshot to Workers KV
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: npx wrangler kv key put latest-signal-snapshot --path data/latest.json --namespace-id "$CF_KV_NAMESPACE_ID" --remote
+
+      - name: Verify production API
+        run: |
+          node --input-type=module <<'JS'
+          const response = await fetch('https://badguard.samsong-1a3.workers.dev/api/signals');
+          if (!response.ok) {
+            throw new Error(`BadGuard API returned ${response.status}`);
+          }
+
+          const snapshot = await response.json();
+          console.log(JSON.stringify({
+            marketDate: snapshot.marketDate,
+            topRows: snapshot.topRows.length,
+            source: snapshot.source
+          }, null, 2));
+          JS

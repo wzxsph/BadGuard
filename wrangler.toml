@@ -1,0 +1,14 @@
+name = "badguard"
+main = "src/index.ts"
+compatibility_date = "2026-07-09"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "SIGNAL_KV"
+id = "00ffe08fee1f497fbbb669394596dab9"
+preview_id = "68cd4dcd13b940bdb9806b3adb82ebf9"
+
+# Optional vars for a compatible JSON market data provider:
+# DATA_PROVIDER_URL = "https://your-provider.example.com/a-share/daily-bars"
+# DATA_PROVIDER_AUTH = "optional bearer token"
+# REFRESH_TOKEN = "optional manual refresh token"
