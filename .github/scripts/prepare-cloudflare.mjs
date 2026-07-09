@@ -89,8 +89,14 @@ async function updateWrangler(namespaceId, previewNamespaceId) {
     content = content.replace(/^name\s*=.*$/m, (line) => `${line}\naccount_id = "${accountId}"`);
   }
 
-  content = content.replace(/id\s*=\s*"[^"]+"/, `id = "${namespaceId}"`);
-  content = content.replace(/preview_id\s*=\s*"[^"]+"/, `preview_id = "${previewNamespaceId}"`);
+  content = content.replace(
+    /(\[\[kv_namespaces\]\]\s*binding\s*=\s*"SIGNAL_KV"\s*id\s*=\s*")[^"]+(")/,
+    `$1${namespaceId}$2`
+  );
+  content = content.replace(
+    /(\[\[kv_namespaces\]\]\s*binding\s*=\s*"SIGNAL_KV"[\s\S]*?preview_id\s*=\s*")[^"]+(")/,
+    `$1${previewNamespaceId}$2`
+  );
 
   await fs.writeFile("wrangler.toml", content);
 }
