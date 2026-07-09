@@ -61,6 +61,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
   <style>${CSS}</style>
 </head>
 <body>
+  ${renderEntryNotice()}
   <header class="masthead">
     <div class="masthead__copy">
       <p class="eyebrow">BadGuard · 收盘后小纸条</p>
@@ -122,6 +123,24 @@ function renderProfessionalNotes(): string {
     </div>
     <ul>${notes}</ul>
     <p class="compliance-note">仅用于个人学习、复盘和观察市场状态；不提供个股推荐，不构成投资建议或收益承诺。</p>
+  </section>`;
+}
+
+function renderEntryNotice(): string {
+  return `<section class="entry-notice" data-entry-notice role="dialog" aria-modal="true" aria-labelledby="entry-notice-title" hidden>
+    <div class="entry-notice__paper">
+      <p class="eyebrow">进入前先冷静 10 秒</p>
+      <h2 id="entry-notice-title">免责声明与名词注解</h2>
+      <p>BadGuard 仅用于个人学习、复盘和技术指标观察，只描述历史交易数据形成的市场状态，不构成投资建议、个股推荐或收益承诺。</p>
+      <dl>
+        <div><dt>观察 / 谨慎</dt><dd>只是状态标签，不是交易指令。</dd></div>
+        <div><dt>结构确认分</dt><dd>用于观察类信号排序，综合趋势、量能、修复质量、近期表现和风险扣分；它不是上涨概率。</dd></div>
+        <div><dt>风险强度</dt><dd>用于风险过滤榜排序，来自跌破均线、放量下跌、KDJ 高位死叉等风险项。</dd></div>
+        <div><dt>KDJ / MACD / RSI / BOLL</dt><dd>均为日线技术指标，只是把价格、成交量和波动痕迹量化，不负责预测未来。</dd></div>
+      </dl>
+      <p class="entry-notice__fineprint">市场没有确定性，只有概率。看懂趋势，比预测涨跌更重要。</p>
+      <button class="entry-notice__accept" type="button" data-entry-accept>我已知晓，进入小纸条</button>
+    </div>
   </section>`;
 }
 
@@ -504,6 +523,10 @@ body {
   letter-spacing: 0;
 }
 
+body.notice-open {
+  overflow: hidden;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -513,6 +536,103 @@ body::before {
     linear-gradient(90deg, rgba(36, 32, 26, 0.07), transparent 18%, transparent 74%, rgba(164, 71, 53, 0.06)),
     linear-gradient(180deg, rgba(255, 250, 240, 0.72), transparent 34%, rgba(47, 111, 95, 0.05));
   mix-blend-mode: multiply;
+}
+
+.entry-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at 50% 8%, rgba(255, 250, 240, 0.28), transparent 34%),
+    rgba(36, 32, 26, 0.52);
+  backdrop-filter: blur(3px);
+}
+
+.entry-notice[hidden] {
+  display: none !important;
+}
+
+.entry-notice__paper {
+  width: min(100%, 720px);
+  max-height: min(86vh, 760px);
+  overflow: auto;
+  padding: clamp(18px, 4vw, 28px);
+  color: var(--ink);
+  background:
+    linear-gradient(135deg, rgba(255, 250, 240, 0.96), rgba(248, 239, 214, 0.92)),
+    var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  box-shadow: 0 26px 70px rgba(36, 32, 26, 0.28);
+}
+
+.entry-notice h2 {
+  margin: 0 0 12px;
+  font-size: clamp(1.35rem, 4vw, 2rem);
+  line-height: 1.18;
+}
+
+.entry-notice p {
+  margin: 0;
+  color: var(--soft-ink);
+  line-height: 1.7;
+}
+
+.entry-notice dl {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.entry-notice dl div {
+  padding: 10px 12px;
+  background: rgba(255, 250, 240, 0.72);
+  border-left: 3px solid var(--line-strong);
+}
+
+.entry-notice dt {
+  margin-bottom: 4px;
+  color: var(--cinnabar);
+  font-weight: 900;
+}
+
+.entry-notice dd {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: 0.92rem;
+  line-height: 1.58;
+}
+
+.entry-notice__fineprint {
+  color: var(--indigo) !important;
+  font-weight: 900;
+}
+
+.entry-notice__accept {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 16px;
+  padding: 10px 14px;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.entry-notice__accept:focus-visible {
+  outline: 3px solid rgba(164, 71, 53, 0.36);
+  outline-offset: 3px;
+}
+
+.entry-notice__accept:hover {
+  background: var(--cinnabar);
+  border-color: var(--cinnabar);
 }
 
 .masthead {
@@ -1229,7 +1349,41 @@ meter::-webkit-meter-optimum-value {
 
 const JS = `
 (() => {
+  const noticeKey = "badguard-entry-notice-accepted-v1";
+  const notice = document.querySelector("[data-entry-notice]");
+  const acceptNoticeButton = document.querySelector("[data-entry-accept]");
   const getItems = (wrapper) => Array.from(wrapper.querySelectorAll("[data-progress-item]"));
+
+  const hasAcceptedNotice = () => {
+    try {
+      return window.localStorage.getItem(noticeKey) === "true";
+    } catch (_error) {
+      return false;
+    }
+  };
+
+  const rememberNotice = () => {
+    try {
+      window.localStorage.setItem(noticeKey, "true");
+    } catch (_error) {
+      // Private browsing or strict storage settings should not block the page.
+    }
+  };
+
+  const closeNotice = () => {
+    if (!notice) {
+      return;
+    }
+
+    notice.hidden = true;
+    document.body.classList.remove("notice-open");
+  };
+
+  if (notice && acceptNoticeButton && !hasAcceptedNotice()) {
+    notice.hidden = false;
+    document.body.classList.add("notice-open");
+    requestAnimationFrame(() => acceptNoticeButton.focus({ preventScroll: true }));
+  }
 
   const updateButton = (wrapper) => {
     const button = wrapper.querySelector("[data-progress-more]");
@@ -1269,6 +1423,11 @@ const JS = `
   };
 
   document.querySelectorAll("[data-progressive-list]").forEach(updateButton);
+
+  acceptNoticeButton?.addEventListener("click", () => {
+    rememberNotice();
+    closeNotice();
+  });
 
   document.addEventListener("click", (event) => {
     const moreButton = event.target.closest("[data-progress-more]");

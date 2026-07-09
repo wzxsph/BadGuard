@@ -6,13 +6,14 @@
 
 ![BadGuard 产品预览](docs/preview.svg)
 
-更多项目体验效果图：
+<details>
+<summary><strong>【更多项目体验截图】点开像翻 PPT 一样横向看</strong></summary>
 
-![BadGuard 首页阅读顺序示意](docs/experience-overview.svg)
+| 首页阅读顺序 | 卡片与详情 | 移动端渐进展开 |
+| --- | --- | --- |
+| ![BadGuard 首页阅读顺序示意](docs/experience-overview.svg) | ![BadGuard 信号卡片与详情示意](docs/experience-card-detail.svg) | ![BadGuard 移动端渐进展开示意](docs/experience-mobile-progressive.svg) |
 
-![BadGuard 信号卡片与详情示意](docs/experience-card-detail.svg)
-
-![BadGuard 移动端渐进展开示意](docs/experience-mobile-progressive.svg)
+</details>
 
 ## 这是个啥
 

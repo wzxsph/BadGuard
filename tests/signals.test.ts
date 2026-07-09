@@ -68,6 +68,17 @@ describe("daily technical signal board", () => {
     expect(html).not.toContain("每日技术信号榜");
   });
 
+  it("renders a one-time entry notice with disclaimer and term notes", () => {
+    const html = renderHtml(snapshot);
+
+    expect(html).toContain("data-entry-notice");
+    expect(html).toContain("免责声明与名词注解");
+    expect(html).toContain("结构确认分");
+    expect(html).toContain("风险强度");
+    expect(html).toContain("data-entry-accept");
+    expect(html).toContain("badguard-entry-notice-accepted-v1");
+  });
+
   it("renders a name-only company directory before the boards", () => {
     const html = renderHtml(snapshot);
     const directoryMatch = html.match(/<div class="directory-list"[^>]*>([\s\S]*?)<\/div>/);
@@ -183,6 +194,8 @@ describe("daily technical signal board", () => {
     expect(readme).toContain("docs/experience-overview.svg");
     expect(readme).toContain("docs/experience-card-detail.svg");
     expect(readme).toContain("docs/experience-mobile-progressive.svg");
+    expect(readme).toContain("【更多项目体验截图】");
+    expect(readme).toContain("<details>");
     expect(readme).not.toContain("docs/preview.png");
     expect(readme).not.toMatch(/c150f9|b1aa994|f20d697/);
     expect(readme.indexOf("## 页面展示什么")).toBeLessThan(readme.indexOf("## 专业注解"));
