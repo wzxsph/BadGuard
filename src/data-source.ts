@@ -1,5 +1,5 @@
 import bundledSnapshot from "../data/latest.json";
-import { buildSnapshotFromStocks } from "./signals";
+import { buildSnapshotFromStocks, enforceSnapshotLiquidity } from "./signals";
 import type { SignalSnapshot, StockSeries } from "./types";
 
 export interface Env {
@@ -15,19 +15,21 @@ export const STAGING_SIGNAL_SNAPSHOT_KEY = "staging-signal-snapshot";
 export const DATED_SIGNAL_SNAPSHOT_PREFIX = "signal-snapshot:";
 
 export async function getSnapshot(env: Env, now = new Date()): Promise<SignalSnapshot> {
-  const cached = await readCachedSnapshot(env);
+  const cached = await readPublishedSnapshot(env);
   if (cached) {
-    return cached;
+    return enforceSnapshotLiquidity(cached);
   }
 
   if (env.DATA_PROVIDER_URL) {
-    return await refreshSnapshot(env, now, false);
+    return await refreshSnapshot(env, now);
   }
 
   return getBundledSnapshot();
 }
 
-export async function refreshSnapshot(env: Env, now = new Date(), persist = true): Promise<SignalSnapshot> {
+/** Builds a provider preview only. Production persistence is handled by the
+ * history-aware Actions publisher so latest/history can never diverge. */
+export async function refreshSnapshot(env: Env, now = new Date()): Promise<SignalSnapshot> {
   let snapshot: SignalSnapshot;
 
   if (env.DATA_PROVIDER_URL) {
@@ -37,29 +39,96 @@ export async function refreshSnapshot(env: Env, now = new Date(), persist = true
     snapshot = getBundledSnapshot();
   }
 
-  if (persist && env.SIGNAL_KV) {
-    await env.SIGNAL_KV.put(CACHE_KEY, JSON.stringify(snapshot), {
-      expirationTtl: 60 * 60 * 36
-    });
-  }
-
   return snapshot;
 }
 
 function getBundledSnapshot(): SignalSnapshot {
-  return bundledSnapshot as SignalSnapshot;
+  return enforceSnapshotLiquidity(bundledSnapshot as SignalSnapshot);
 }
 
-async function readCachedSnapshot(env: Env): Promise<SignalSnapshot | null> {
+async function readPublishedSnapshot(env: Env): Promise<SignalSnapshot | null> {
   if (!env.SIGNAL_KV) {
     return null;
   }
 
+  let latest: SignalSnapshot | null = null;
   try {
-    return await env.SIGNAL_KV.get<SignalSnapshot>(CACHE_KEY, "json");
+    latest = await env.SIGNAL_KV.get<SignalSnapshot>(CACHE_KEY, "json");
   } catch {
+    // The latest key keeps its existing best-effort fallback behavior.
+  }
+
+  try {
+    const rawIndex = await env.SIGNAL_KV.get<unknown>("signal-history-index", "json");
+    const indexedEntry = findNewestReadyHistoryEntry(rawIndex);
+    if (!indexedEntry) {
+      return latest;
+    }
+
+    const key = indexedEntry.snapshotKey || `history-snapshot:${indexedEntry.date}`;
+    const indexed = await env.SIGNAL_KV.get<SignalSnapshot>(key, "json");
+    if (!isSnapshotForDate(indexed, indexedEntry.date)) {
+      return latest;
+    }
+
+    // The history index is the publication commit point. It wins on equal
+    // dates (including forced revisions), while a newer legacy latest payload
+    // remains usable during the one-time history bootstrap.
+    if (!latest || indexed.marketDate >= latest.marketDate) {
+      return indexed;
+    }
+  } catch {
+    // Today's page remains best-effort; strict history routes never swallow KV errors.
+  }
+
+  return latest;
+}
+
+interface ReadyHistoryPointer {
+  date: string;
+  snapshotKey?: string;
+}
+
+function findNewestReadyHistoryEntry(value: unknown): ReadyHistoryPointer | null {
+  if (!isRecord(value) || !Array.isArray(value.entries)) {
     return null;
   }
+
+  const entries = value.entries
+    .filter((entry): entry is Record<string, unknown> => (
+      isRecord(entry) &&
+      entry.status === "ready" &&
+      typeof entry.date === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
+      (entry.snapshotKey === undefined || (
+        typeof entry.snapshotKey === "string" &&
+        isSafeIndexedSnapshotKey(entry.snapshotKey, entry.date)
+      ))
+    ))
+    .sort((left, right) => String(right.date).localeCompare(String(left.date)));
+  const newest = entries[0];
+  if (!newest) {
+    return null;
+  }
+
+  return {
+    date: String(newest.date),
+    ...(typeof newest.snapshotKey === "string" ? { snapshotKey: newest.snapshotKey } : {})
+  };
+}
+
+function isSnapshotForDate(value: SignalSnapshot | null, date: string): value is SignalSnapshot {
+  return Boolean(
+    value &&
+    value.marketDate === date &&
+    Array.isArray(value.boards) &&
+    Array.isArray(value.topRows)
+  );
+}
+
+function isSafeIndexedSnapshotKey(key: string, date: string): boolean {
+  return key === `history-snapshot:${date}` ||
+    new RegExp(`^history-snapshot:${date}:v:[0-9a-f]{16}$`).test(key);
 }
 
 async function fetchProviderStocks(env: Env): Promise<StockSeries[]> {
@@ -110,7 +179,9 @@ function parseProviderPayload(payload: unknown): StockSeries[] {
           !isNumber(bar.low) ||
           !isNumber(bar.close) ||
           !isNumber(bar.volume) ||
-          !isNumber(bar.amount)
+          !isNumber(bar.amount) ||
+          !isOptionalNumber(bar.turnoverRate) ||
+          !isOptionalNumber(bar.floatMarketCap)
         ) {
           throw new Error(`invalid bar at ${item.code}[${barIndex}]`);
         }
@@ -122,7 +193,9 @@ function parseProviderPayload(payload: unknown): StockSeries[] {
           low: bar.low,
           close: bar.close,
           volume: bar.volume,
-          amount: bar.amount
+          amount: bar.amount,
+          turnoverRate: bar.turnoverRate ?? null,
+          floatMarketCap: bar.floatMarketCap ?? null
         };
       })
     };
@@ -135,4 +208,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function isOptionalNumber(value: unknown): value is number | null | undefined {
+  return value === undefined || value === null || isNumber(value);
 }

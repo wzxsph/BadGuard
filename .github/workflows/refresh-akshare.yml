@@ -6,7 +6,7 @@ on:
       scan_limit:
         description: Number of active A-share stocks to scan; use 0 for all.
         required: true
-        default: "80"
+        default: "1000"
       publish_production:
         description: Publish to production keys instead of staging.
         required: true
@@ -15,6 +15,14 @@ on:
         description: Overwrite an existing production snapshot for the same market date.
         required: true
         default: "false"
+      backfill_start:
+        description: Optional first exchange date to backfill, for example 20260708.
+        required: false
+        default: ""
+      backfill_end:
+        description: Optional last exchange date to backfill; defaults to the prior exchange date.
+        required: false
+        default: ""
   schedule:
     - cron: "30 7 * * 1-5"
 
@@ -28,7 +36,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
@@ -49,9 +57,33 @@ jobs:
       - name: Install Python dependencies
         run: uv sync --locked
 
+      - name: Install Worker dependencies
+        run: npm ci
+
+      - name: Prepare prior history codes
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISH_PRODUCTION: ${{ github.event_name == 'schedule' || github.event.inputs.publish_production == 'true' }}
+        run: |
+          KV_NAMESPACE_ID="$(node --input-type=module <<'JS'
+          import fs from 'node:fs';
+
+          const toml = fs.readFileSync('wrangler.toml', 'utf8');
+          const match = toml.match(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"SIGNAL_KV"[\s\S]*?id\s*=\s*"([^"]+)"/);
+          if (!match) throw new Error('SIGNAL_KV id not found in wrangler.toml');
+          console.log(match[1]);
+          JS
+          )"
+          export KV_NAMESPACE_ID
+          echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
+          node scripts/fetch_required_history_codes.mjs data/required-history-codes.json
+
       - name: Build AkShare signal snapshot
         env:
           PUBLISH_PRODUCTION: ${{ github.event_name == 'schedule' || github.event.inputs.publish_production == 'true' }}
+          BACKFILL_START: ${{ github.event.inputs.backfill_start }}
+          BACKFILL_END: ${{ github.event.inputs.backfill_end }}
         run: |
           SCAN_LIMIT="${{ github.event.inputs.scan_limit }}"
           if [ -z "$SCAN_LIMIT" ]; then
@@ -63,49 +95,67 @@ jobs:
             BUILD_MODE=production
           fi
 
+          UNIVERSE_SOURCE=realtime
+          SNAPSHOT_SOURCE=live
+          EXTRA_ARGS=()
+          if [ -n "$BACKFILL_START" ]; then
+            UNIVERSE_SOURCE=code-list
+            SNAPSHOT_SOURCE=backfill
+            SCAN_LIMIT=0
+            EXTRA_ARGS+=(--backfill-start "$BACKFILL_START")
+            if [ -n "$BACKFILL_END" ]; then
+              EXTRA_ARGS+=(--backfill-end "$BACKFILL_END")
+            fi
+          elif [ "$PUBLISH_PRODUCTION" = "true" ] && [ "$HISTORY_BOOTSTRAP_REQUIRED" = "true" ]; then
+            UNIVERSE_SOURCE=code-list
+            SNAPSHOT_SOURCE=backfill
+            SCAN_LIMIT=0
+            EXTRA_ARGS+=(--backfill-start 20260708 --include-live-target)
+          fi
+
           uv run python scripts/build_akshare_snapshot.py \
             --output data/latest.json \
-            --universe-source realtime \
+            --close-output data/market-close.json \
+            --calendar-output data/trading-calendar.json \
+            --artifact-dir data/publish \
+            --required-codes data/required-history-codes.json \
+            --universe-source "$UNIVERSE_SOURCE" \
             --history-source eastmoney \
             --limit "$SCAN_LIMIT" \
             --max-workers 8 \
             --sleep 0.02 \
-            --build-mode "$BUILD_MODE"
+            --build-mode "$BUILD_MODE" \
+            --snapshot-source "$SNAPSHOT_SOURCE" \
+            "${EXTRA_ARGS[@]}"
 
-      - name: Install Worker dependencies
-        run: npm ci
-
-      - name: Validate snapshot
+      - name: Validate history artifacts
         run: |
+          node scripts/publish_history.mjs \
+            --manifest data/publish/manifest.json \
+            --calendar data/trading-calendar.json \
+            --validate-only
+
           node --input-type=module <<'JS'
           import fs from 'node:fs/promises';
 
-          const snapshot = JSON.parse(await fs.readFile('data/latest.json', 'utf8'));
-          const topKinds = new Set(snapshot.topRows.map((row) => row.signalId));
-
-          if (snapshot.source !== 'provider') {
-            throw new Error(`Unexpected source: ${snapshot.source}`);
-          }
-
-          if (snapshot.boards.length !== 4) {
-            throw new Error(`Expected 4 boards, got ${snapshot.boards.length}`);
-          }
-
-          if (topKinds.has('risk-filter')) {
-            throw new Error('risk-filter rows must not appear in topRows');
-          }
-
-          if (!snapshot.meta || typeof snapshot.meta.stockCount !== 'number' || typeof snapshot.meta.scanLimit !== 'number') {
-            throw new Error('snapshot.meta must include stockCount and scanLimit');
-          }
-
-          await fs.appendFile(process.env.GITHUB_ENV, `MARKET_DATE=${snapshot.marketDate}\n`);
+          const manifest = JSON.parse(await fs.readFile('data/publish/manifest.json', 'utf8'));
+          const dates = manifest.artifacts.map((artifact) => artifact.date).sort();
+          const marketDate = dates.at(-1);
+          const liveDate = manifest.artifacts
+            .filter((artifact) => artifact.source === 'live')
+            .map((artifact) => artifact.date)
+            .sort()
+            .at(-1) ?? '';
+          await fs.appendFile(process.env.GITHUB_ENV, `MARKET_DATE=${marketDate}\n`);
+          await fs.appendFile(process.env.GITHUB_ENV, `ARTIFACT_DATES=${dates.join(',')}\n`);
+          await fs.appendFile(process.env.GITHUB_ENV, `LIVE_ARTIFACT_DATE=${liveDate}\n`);
+          await fs.appendFile(process.env.GITHUB_ENV, `SNAPSHOT_SOURCE=${manifest.source}\n`);
 
           console.log(JSON.stringify({
-            marketDate: snapshot.marketDate,
-            topRows: snapshot.topRows.length,
-            meta: snapshot.meta,
-            boards: snapshot.boards.map((board) => [board.id, board.rows.length])
+            marketDate,
+            dates,
+            liveDate,
+            source: manifest.source
           }, null, 2));
           JS
 
@@ -116,97 +166,56 @@ jobs:
           PUBLISH_PRODUCTION: ${{ github.event_name == 'schedule' || github.event.inputs.publish_production == 'true' }}
           FORCE_PUBLISH: ${{ github.event.inputs.force_publish == 'true' }}
         run: |
-          KV_NAMESPACE_ID="$(node --input-type=module <<'JS'
-          import fs from 'node:fs';
-
-          const toml = fs.readFileSync('wrangler.toml', 'utf8');
-          const match = toml.match(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"SIGNAL_KV"[\s\S]*?id\s*=\s*"([^"]+)"/);
-          if (!match) {
-            throw new Error('SIGNAL_KV id not found in wrangler.toml');
-          }
-
-          console.log(match[1]);
-          JS
-          )"
-
-          if [ "$PUBLISH_PRODUCTION" != "true" ]; then
-            npx wrangler kv key put staging-signal-snapshot --path data/latest.json --namespace-id "$KV_NAMESPACE_ID" --remote
-            echo "VERIFY_KEY=staging-signal-snapshot" >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          DATED_KEY="signal-snapshot:${MARKET_DATE}"
-          if npx wrangler kv key get "$DATED_KEY" --namespace-id "$KV_NAMESPACE_ID" --remote >/tmp/badguard-existing.json 2>/tmp/badguard-kv-get.err; then
-            if [ "$FORCE_PUBLISH" != "true" ]; then
-              echo "Production snapshot already exists for ${MARKET_DATE}; not overwriting ${DATED_KEY}."
-              echo "VERIFY_KEY=latest-signal-snapshot" >> "$GITHUB_ENV"
-              exit 0
-            fi
-          fi
-
-          npx wrangler kv key put "$DATED_KEY" --path data/latest.json --namespace-id "$KV_NAMESPACE_ID" --remote
-          npx wrangler kv key put latest-signal-snapshot --path data/latest.json --namespace-id "$KV_NAMESPACE_ID" --remote
-          echo "VERIFY_KEY=latest-signal-snapshot" >> "$GITHUB_ENV"
+          node scripts/publish_history.mjs \
+            --manifest data/publish/manifest.json \
+            --calendar data/trading-calendar.json
 
       - name: Verify published snapshot
         env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISH_PRODUCTION: ${{ github.event_name == 'schedule' || github.event.inputs.publish_production == 'true' }}
         run: |
-          KV_NAMESPACE_ID="$(node --input-type=module <<'JS'
-          import fs from 'node:fs';
-
-          const toml = fs.readFileSync('wrangler.toml', 'utf8');
-          const match = toml.match(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"SIGNAL_KV"[\s\S]*?id\s*=\s*"([^"]+)"/);
-          if (!match) {
-            throw new Error('SIGNAL_KV id not found in wrangler.toml');
-          }
-
-          console.log(match[1]);
-          JS
-          )"
-
-          if [ "$VERIFY_KEY" = "staging-signal-snapshot" ]; then
-            npx wrangler kv key get "$VERIFY_KEY" --namespace-id "$KV_NAMESPACE_ID" --remote >/tmp/badguard-verify.json
-            node --input-type=module -e '
-          import fs from "node:fs";
-
-          const snapshot = JSON.parse(fs.readFileSync("/tmp/badguard-verify.json", "utf8"));
-          console.log(JSON.stringify({
-            key: process.env.VERIFY_KEY,
-            marketDate: snapshot.marketDate,
-            topRows: snapshot.topRows.length,
-            buildMode: snapshot.meta?.buildMode
-          }, null, 2));
-
-          if (snapshot.meta?.buildMode !== "staging") {
-            throw new Error("staging verification expected buildMode=staging");
-          }
-          '
+          if [ "$PUBLISH_PRODUCTION" != "true" ]; then
+            echo "Staging payload was verified directly after KV upload."
             exit 0
           fi
 
           node --input-type=module <<'JS'
-          const url = 'https://badguard.nizabentley397.workers.dev/api/signals';
+          const baseUrl = 'https://badguard.nizabentley397.workers.dev';
+          const expectedDates = process.env.ARTIFACT_DATES.split(',').filter(Boolean);
           let lastStatus = 'not requested';
 
           for (let attempt = 1; attempt <= 6; attempt += 1) {
-            const response = await fetch(url).catch((error) => {
+            const [signalsResponse, historyResponse] = await Promise.all([
+              fetch(`${baseUrl}/api/signals`),
+              fetch(`${baseUrl}/api/history`)
+            ]).catch((error) => {
               lastStatus = error.message;
-              return null;
+              return [];
             });
 
-            if (response?.ok) {
-              const snapshot = await response.json();
+            if (signalsResponse?.ok && historyResponse?.ok) {
+              const snapshot = await signalsResponse.json();
+              const history = await historyResponse.json();
+              const rawDates = Array.isArray(history)
+                ? history
+                : history.dates ?? history.entries ?? [];
+              const historyDates = rawDates.map((item) => typeof item === 'string' ? item : item.date);
+              const allVisible = expectedDates.every((date) => historyDates.includes(date));
+              const latestIsCurrent = !process.env.LIVE_ARTIFACT_DATE || snapshot.marketDate === process.env.LIVE_ARTIFACT_DATE;
+              if (!allVisible || !latestIsCurrent) {
+                lastStatus = `history visible=${allVisible}, latest=${snapshot.marketDate}`;
+                await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
+                continue;
+              }
               console.log(JSON.stringify({
                 marketDate: snapshot.marketDate,
-                topRows: snapshot.topRows.length,
-                source: snapshot.source
+                expectedDates,
+                historyDates
               }, null, 2));
               process.exit(0);
             }
 
-            lastStatus = response?.status ?? lastStatus;
+            lastStatus = `${signalsResponse?.status ?? lastStatus}/${historyResponse?.status ?? lastStatus}`;
             await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
           }
 

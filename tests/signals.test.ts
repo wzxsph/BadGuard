@@ -97,7 +97,7 @@ describe("daily technical signal board", () => {
     if (visibleLinkTags.length > 30) {
       expect(visibleLinkTags.slice(30).every((tag) => tag.includes(" hidden"))).toBe(true);
       expect(html).toContain('aria-controls="company-directory-list"');
-      expect(html).toContain("再看 30 个");
+      expect(html).toContain(`再看 ${Math.min(30, visibleLinkTags.length - 30)} 个`);
     }
   });
 
@@ -187,6 +187,54 @@ describe("daily technical signal board", () => {
     expect(result.marketDate).toBe("2026-07-09");
   });
 
+  it("uses the history index as the publication pointer without regressing a newer legacy latest", async () => {
+    const latest = assembleSnapshot(
+      [makeTestRow("000001", 80)],
+      "2026-07-10",
+      "2026-07-10T15:30:00+08:00",
+      "provider",
+      "legacy latest"
+    );
+    const indexedSameDate = assembleSnapshot(
+      [makeTestRow("000001", 95)],
+      "2026-07-10",
+      "2026-07-10T15:31:00+08:00",
+      "provider",
+      "indexed revision"
+    );
+    const pointerKey = "history-snapshot:2026-07-10:v:0123456789abcdef";
+    const values = new Map<string, unknown>([
+      [LATEST_SIGNAL_SNAPSHOT_KEY, latest],
+      ["signal-history-index", {
+        version: 1,
+        entries: [{
+          date: "2026-07-10",
+          source: "live",
+          status: "ready",
+          snapshotKey: pointerKey
+        }]
+      }],
+      [pointerKey, indexedSameDate]
+    ]);
+    const result = await getSnapshot({
+      SIGNAL_KV: {
+        get: async (key: string) => values.get(key) ?? null
+      } as unknown as KVNamespace
+    });
+
+    expect(result.sourceLabel).toBe("indexed revision");
+    expect(result.topRows[0].signalStrength).toBe(95);
+
+    values.set(LATEST_SIGNAL_SNAPSHOT_KEY, { ...latest, marketDate: "2026-07-11", sourceLabel: "newer legacy latest" });
+    const newerLegacy = await getSnapshot({
+      SIGNAL_KV: {
+        get: async (key: string) => values.get(key) ?? null
+      } as unknown as KVNamespace
+    });
+    expect(newerLegacy.marketDate).toBe("2026-07-11");
+    expect(newerLegacy.sourceLabel).toBe("newer legacy latest");
+  });
+
   it("keeps README public-safe and points at the native SVG preview", () => {
     const readme = fs.readFileSync("README.md", "utf8");
 
@@ -226,12 +274,17 @@ function makeTestRow(code: string, signalStrength: number): SignalRow {
     signalName: "日线KDJ低位金叉 + 成交量放大",
     stance: "观察",
     triggerDate: "2026-07-09",
+    triggerClose: 10,
     indicators: {
       kdj: { k: 20, d: 18, j: 24 },
       macd: { dif: 0.1, dea: 0.05, histogram: 0.05 },
       rsi: 35
     },
-    amount: 100000000,
+    amount: 300000000,
+    turnoverRate: 2,
+    floatMarketCap: 5000000000,
+    liquidityEligible: true,
+    liquidityTags: [],
     industry: "测试行业",
     change5d: 1,
     change20d: 2,

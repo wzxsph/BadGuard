@@ -10,6 +10,10 @@ export interface DailyBar {
   close: number;
   volume: number;
   amount: number;
+  /** 当日换手率，单位为百分比（例如 3.2 表示 3.2%）。 */
+  turnoverRate?: number | null;
+  /** 当日流通市值，单位为人民币元。 */
+  floatMarketCap?: number | null;
 }
 
 export interface StockSeries {
@@ -50,8 +54,13 @@ export interface SignalRow {
   signalName: string;
   stance: Stance;
   triggerDate: string;
+  triggerClose: number;
   indicators: IndicatorValues;
   amount: number;
+  turnoverRate: number | null;
+  floatMarketCap: number | null;
+  liquidityEligible: boolean;
+  liquidityTags: string[];
   industry: string;
   change5d: number;
   change20d: number;

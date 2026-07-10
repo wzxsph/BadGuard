@@ -62,6 +62,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
 </head>
 <body>
   ${renderEntryNotice()}
+  ${renderSiteNavigation("today")}
   <header class="masthead">
     <div class="masthead__copy">
       <p class="eyebrow">BadGuard · 收盘后小纸条</p>
@@ -126,6 +127,13 @@ function renderProfessionalNotes(): string {
   </section>`;
 }
 
+function renderSiteNavigation(active: "today" | "history"): string {
+  return `<nav class="site-nav" aria-label="榜单视图">
+    <a href="/"${active === "today" ? ' aria-current="page"' : ""}>今日榜单</a>
+    <a href="/history"${active === "history" ? ' aria-current="page"' : ""}>历史复盘</a>
+  </nav>`;
+}
+
 function renderEntryNotice(): string {
   return `<section class="entry-notice" data-entry-notice role="dialog" aria-modal="true" aria-labelledby="entry-notice-title" hidden>
     <div class="entry-notice__paper">
@@ -136,6 +144,7 @@ function renderEntryNotice(): string {
         <div><dt>观察 / 谨慎</dt><dd>只是状态标签，不是交易指令。</dd></div>
         <div><dt>结构确认分</dt><dd>用于观察类信号排序，综合趋势、量能、修复质量、近期表现和风险扣分；它不是上涨概率。</dd></div>
         <div><dt>风险强度</dt><dd>用于风险过滤榜排序，来自跌破均线、放量下跌、KDJ 高位死叉等风险项。</dd></div>
+        <div><dt>大票优先门槛</dt><dd>三个观察榜只保留流通市值不少于 50 亿元、当日成交额不少于 2 亿元的股票；这是流动性控制，不是收益保证。</dd></div>
         <div><dt>KDJ / MACD / RSI / BOLL</dt><dd>均为日线技术指标，只是把价格、成交量和波动痕迹量化，不负责预测未来。</dd></div>
       </dl>
       <p class="entry-notice__fineprint">市场没有确定性，只有概率。看懂趋势，比预测涨跌更重要。</p>
@@ -255,10 +264,15 @@ function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "sum
         <div><dt>成交额</dt><dd>${formatAmount(row.amount)}</dd></div>
         <div><dt>所属行业</dt><dd>${escapeHtml(row.industry)}</dd></div>
       </div>
+      <div class="metric-pair metric-pair--liquidity">
+        <div><dt>流通市值</dt><dd>${formatMarketCap(row.floatMarketCap)}</dd></div>
+        <div><dt>换手率</dt><dd>${formatTurnoverRate(row.turnoverRate)}</dd></div>
+      </div>
     </dl>
 
     <div class="tag-row" aria-label="风险标签">
       ${row.riskTags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}
+      ${(row.liquidityTags || []).map((tag) => `<span class="tag tag--liquidity">${escapeHtml(tag)}</span>`).join("")}
     </div>
 
     <div class="score-row">
@@ -412,12 +426,32 @@ function inferMarket(code: string): string {
   return "深交所";
 }
 
-function formatAmount(value: number): string {
+function formatAmount(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "暂无数据";
+  }
+
   if (Math.abs(value) >= 100000000) {
     return `${formatNumber(value / 100000000)}亿`;
   }
 
   return `${formatNumber(value / 10000)}万`;
+}
+
+function formatMarketCap(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "暂无数据";
+  }
+
+  return `${formatNumber(value / 100000000)}亿`;
+}
+
+function formatTurnoverRate(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "暂无数据";
+  }
+
+  return `${formatNumber(value)}%`;
 }
 
 function formatPercent(value: number): string {
@@ -521,6 +555,32 @@ body {
   color: var(--ink);
   font-family: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "PingFang SC", "Microsoft YaHei", serif;
   letter-spacing: 0;
+}
+
+.site-nav {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px clamp(12px, 4vw, 40px) 0;
+}
+
+.site-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 7px 14px;
+  color: var(--soft-ink);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 250, 240, 0.72);
+  font-weight: 900;
+}
+
+.site-nav a[aria-current="page"] {
+  color: #fffaf0;
+  border-color: var(--indigo);
+  background: var(--indigo);
 }
 
 body.notice-open {
@@ -1137,6 +1197,12 @@ main {
   font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
   font-size: 0.73rem;
   font-weight: 900;
+}
+
+.tag--liquidity {
+  color: var(--indigo);
+  border-color: rgba(54, 83, 122, 0.35);
+  background: rgba(232, 237, 244, 0.58);
 }
 
 .return-up {

@@ -4,6 +4,56 @@ import type { DailyBar, SignalBoard, SignalId, SignalRow, SignalSnapshot, StockS
 
 const OBSERVATION_SIGNAL_IDS = new Set<SignalId>(["low-rebound", "trend-strength", "oversold-repair"]);
 
+/** 三个观察榜要求的最低流通市值，单位为人民币元。 */
+export const MIN_FLOAT_MARKET_CAP = 5_000_000_000;
+/** 三个观察榜要求的最低当日成交额，单位为人民币元。 */
+export const MIN_DAILY_AMOUNT = 200_000_000;
+/** 换手率仅用于风险提示，不参与观察榜硬门槛。 */
+export const ABNORMAL_TURNOVER_RATE = 20;
+
+export interface LiquidityMetrics {
+  amount: number | null | undefined;
+  floatMarketCap: number | null | undefined;
+  turnoverRate: number | null | undefined;
+}
+
+export interface LiquidityEvaluation {
+  eligible: boolean;
+  tags: string[];
+}
+
+export function evaluateLiquidity(metrics: LiquidityMetrics): LiquidityEvaluation {
+  const amount = normalizeLiquidityMetric(metrics.amount);
+  const floatMarketCap = normalizeLiquidityMetric(metrics.floatMarketCap);
+  const turnoverRate = normalizeLiquidityMetric(metrics.turnoverRate);
+  const tags: string[] = [];
+
+  if (amount === null || floatMarketCap === null || turnoverRate === null) {
+    tags.push("流动性数据缺失");
+  }
+
+  if (floatMarketCap !== null && floatMarketCap < MIN_FLOAT_MARKET_CAP) {
+    tags.push("流通市值低于50亿元");
+  }
+
+  if (amount !== null && amount < MIN_DAILY_AMOUNT) {
+    tags.push("成交额低于2亿元");
+  }
+
+  if (turnoverRate !== null && turnoverRate >= ABNORMAL_TURNOVER_RATE) {
+    tags.push("换手率异常");
+  }
+
+  return {
+    eligible:
+      amount !== null &&
+      floatMarketCap !== null &&
+      amount >= MIN_DAILY_AMOUNT &&
+      floatMarketCap >= MIN_FLOAT_MARKET_CAP,
+    tags
+  };
+}
+
 export function buildSnapshotFromStocks(
   stocks: StockSeries[],
   now = new Date(),
@@ -79,12 +129,12 @@ export function assembleSnapshot(
   const boards: SignalBoard[] = SIGNAL_DEFINITIONS.map((definition) => ({
     ...definition,
     rows: rows
-      .filter((row) => row.signalId === definition.id)
+      .filter((row) => row.signalId === definition.id && isVisibleOnBoard(row))
       .sort(compareRows)
   }));
 
   const topRows = rows
-    .filter((row) => OBSERVATION_SIGNAL_IDS.has(row.signalId))
+    .filter((row) => OBSERVATION_SIGNAL_IDS.has(row.signalId) && isLiquidityEligibleRow(row))
     .sort(compareRows);
 
   return {
@@ -100,10 +150,33 @@ export function assembleSnapshot(
   };
 }
 
+/**
+ * Applies the current liquidity contract to persisted snapshots as they are read.
+ * This keeps older KV/bundled payloads from bypassing a newly introduced hard
+ * gate; legacy risk rows remain visible with explicit missing-data annotations.
+ */
+export function enforceSnapshotLiquidity(snapshot: SignalSnapshot): SignalSnapshot {
+  const rows = snapshot.boards.flatMap((board) => board.rows).map(normalizePersistedRow);
+  return assembleSnapshot(
+    rows,
+    snapshot.marketDate,
+    snapshot.refreshedAt,
+    snapshot.source,
+    snapshot.sourceLabel,
+    snapshot.meta
+  );
+}
+
 export function compareRows(left: SignalRow, right: SignalRow): number {
   const strengthDelta = right.signalStrength - left.signalStrength;
   if (strengthDelta !== 0) {
     return strengthDelta;
+  }
+
+  const leftMarketCap = sortableMarketCap(left.floatMarketCap);
+  const rightMarketCap = sortableMarketCap(right.floatMarketCap);
+  if (leftMarketCap !== rightMarketCap) {
+    return rightMarketCap > leftMarketCap ? 1 : -1;
   }
 
   return left.code.localeCompare(right.code);
@@ -180,6 +253,15 @@ function makeRow(signalId: SignalId, context: SignalContext, strength: number): 
     throw new Error(`Unknown signal id: ${signalId}`);
   }
 
+  const amount = roundMetric(context.current.amount, 0);
+  const turnoverRate = context.current.turnoverRate === null ? null : roundMetric(context.current.turnoverRate);
+  const floatMarketCap = context.current.floatMarketCap === null ? null : roundMetric(context.current.floatMarketCap, 0);
+  const liquidity = evaluateLiquidity({
+    amount: context.current.amount,
+    turnoverRate: context.current.turnoverRate,
+    floatMarketCap: context.current.floatMarketCap
+  });
+
   return {
     code: context.stock.code,
     name: context.stock.name,
@@ -187,6 +269,7 @@ function makeRow(signalId: SignalId, context: SignalContext, strength: number): 
     signalName: definition.signalName,
     stance: definition.stance,
     triggerDate: context.current.date,
+    triggerClose: context.current.close,
     indicators: {
       kdj: {
         k: roundMetric(context.current.kdj.k),
@@ -200,13 +283,61 @@ function makeRow(signalId: SignalId, context: SignalContext, strength: number): 
       },
       rsi: roundMetric(context.current.rsi)
     },
-    amount: roundMetric(context.current.amount, 0),
+    amount,
+    turnoverRate,
+    floatMarketCap,
+    liquidityEligible: liquidity.eligible,
+    liquidityTags: liquidity.tags,
     industry: context.stock.industry,
     change5d: roundMetric(context.change5d),
     change20d: roundMetric(context.change20d),
     riskTags: signalId === "risk-filter" ? buildRiskTags(context.current, context.previous, true) : buildRiskTags(context.current, context.previous, false),
     signalStrength: Math.round(clamp(strength, 0, 100))
   };
+}
+
+function isVisibleOnBoard(row: SignalRow): boolean {
+  return row.signalId === "risk-filter" || isLiquidityEligibleRow(row);
+}
+
+function normalizePersistedRow(row: SignalRow): SignalRow {
+  const evaluated = evaluateLiquidity({
+    amount: row.amount,
+    floatMarketCap: row.floatMarketCap,
+    turnoverRate: row.turnoverRate
+  });
+  const triggerClose = typeof row.triggerClose === "number" && Number.isFinite(row.triggerClose) && row.triggerClose > 0
+    ? row.triggerClose
+    : 0;
+
+  return {
+    ...row,
+    triggerClose,
+    turnoverRate: normalizeLiquidityMetric(row.turnoverRate),
+    floatMarketCap: normalizeLiquidityMetric(row.floatMarketCap),
+    liquidityEligible: row.liquidityEligible !== false && evaluated.eligible,
+    liquidityTags: Array.isArray(row.liquidityTags)
+      ? Array.from(new Set([...row.liquidityTags, ...evaluated.tags]))
+      : evaluated.tags
+  };
+}
+
+function isLiquidityEligibleRow(row: SignalRow): boolean {
+  const evaluated = evaluateLiquidity({
+    amount: row.amount,
+    floatMarketCap: row.floatMarketCap,
+    turnoverRate: row.turnoverRate
+  });
+
+  return row.liquidityEligible !== false && evaluated.eligible;
+}
+
+function sortableMarketCap(value: number | null | undefined): number {
+  return normalizeLiquidityMetric(value) ?? -1;
+}
+
+function normalizeLiquidityMetric(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function buildRiskTags(current: RequiredPoint, previous: RequiredPoint, strict: boolean): string[] {

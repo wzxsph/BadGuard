@@ -8,3 +8,7 @@ coverage/
 __pycache__/
 *.py[cod]
 npm-debug.log*
+data/market-close.json
+data/trading-calendar.json
+data/required-history-codes.json
+data/publish/

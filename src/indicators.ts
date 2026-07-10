@@ -5,6 +5,8 @@ export interface IndicatorPoint {
   close: number;
   volume: number;
   amount: number;
+  turnoverRate: number | null;
+  floatMarketCap: number | null;
   kdj: KdjValue | null;
   macd: MacdValue | null;
   rsi: number | null;
@@ -35,6 +37,8 @@ export function buildIndicatorSeries(bars: DailyBar[]): IndicatorPoint[] {
       close: bar.close,
       volume: bar.volume,
       amount: bar.amount,
+      turnoverRate: normalizeOptionalMetric(bar.turnoverRate),
+      floatMarketCap: normalizeOptionalMetric(bar.floatMarketCap),
       kdj: kdjValues[index],
       macd: {
         dif: dif[index],
@@ -49,6 +53,10 @@ export function buildIndicatorSeries(bars: DailyBar[]): IndicatorPoint[] {
       volumeRatio: volumeRatio(bars, index, 5)
     };
   });
+}
+
+function normalizeOptionalMetric(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 export function calculateReturn(bars: DailyBar[], lookback: number): number {
