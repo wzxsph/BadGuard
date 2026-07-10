@@ -14,14 +14,22 @@ import {
 const args = parseArgs(process.argv.slice(2));
 const manifestPath = args.manifest || "data/publish/manifest.json";
 const calendarPath = args.calendar || "data/trading-calendar.json";
+const universeManifestPath = args["universe-manifest"];
 const validateOnly = Boolean(args["validate-only"]);
 const force = Boolean(args.force) || process.env.FORCE_PUBLISH === "true";
 const production = process.env.PUBLISH_PRODUCTION === "true";
 const bootstrapSeed = Boolean(args["bootstrap-seed"]);
 
 const bundle = await loadAndValidateBundle(manifestPath, calendarPath, bootstrapSeed);
+const universe = universeManifestPath
+  ? await loadAndValidateUniverseManifest(universeManifestPath)
+  : null;
+validateBundleUniverse(bundle, universe, bootstrapSeed);
 if (validateOnly) {
-  console.log(JSON.stringify(bundle.summary, null, 2));
+  console.log(JSON.stringify({
+    ...bundle.summary,
+    universeManifestRevision: universe?.manifest.revision ?? null
+  }, null, 2));
   process.exit(0);
 }
 
@@ -71,6 +79,12 @@ if (existingLatest && !isDate(existingLatest.marketDate)) {
   throw new Error("Existing latest-signal-snapshot has an invalid marketDate.");
 }
 await enforceLiveStockCountStability(kv, existingIndex, bundle.artifacts, force, bootstrapSeed);
+const universePublication = universe && !bootstrapSeed
+  ? {
+      ...universe,
+      key: `signal-universe-manifest:v:${universe.manifest.revision}`
+    }
+  : null;
 const published = [];
 const skipped = [];
 const skippedPayloads = [];
@@ -82,6 +96,9 @@ for (const entry of existingIndex.entries) {
 }
 
 // Immutable payloads are prepared first. The index commits visibility; compatibility aliases follow it.
+if (universePublication) {
+  await kv.put(universePublication.key, universePublication.text);
+}
 await kv.put("market-trading-calendar", JSON.stringify(bundle.calendar));
 
 for (const artifact of [...bundle.artifacts].sort((left, right) => left.date.localeCompare(right.date))) {
@@ -112,6 +129,10 @@ for (const artifact of [...bundle.artifacts].sort((left, right) => left.date.loc
     snapshotKey,
     closeKey,
     revision,
+    ...(universePublication ? {
+      universeManifestKey: universePublication.key,
+      universeManifestRevision: universePublication.manifest.revision
+    } : {}),
     ...(artifact.bootstrapSeed === true ? { bootstrapSeed: true } : {})
   };
   published.push({ ...artifact, ...entry });
@@ -160,12 +181,24 @@ if (latestLiveEntry) {
 }
 
 await verifyRemotePublication(kv, bundle, published, skippedPayloads, latestLive);
+const universeAcceptedByIndex = universePublication && nextIndex.entries.some((entry) =>
+  entry.universeManifestKey === universePublication.key &&
+  entry.universeManifestRevision === universePublication.manifest.revision
+);
+if (universePublication && universeAcceptedByIndex) {
+  await kv.put("signal-universe-manifest", universePublication.text);
+  const acceptedUniverse = parseJson(await kv.get("signal-universe-manifest"), "signal-universe-manifest");
+  if (acceptedUniverse.revision !== universePublication.manifest.revision) {
+    throw new Error("Accepted universe manifest alias verification failed.");
+  }
+}
 console.log(JSON.stringify({
   mode: bootstrapSeed ? "production-bootstrap-seed" : "production",
   force,
   published: published.map((entry) => ({ date: entry.date, revision: entry.revision })),
   skipped,
-  indexEntries: nextIndex.entries.length
+  indexEntries: nextIndex.entries.length,
+  universeManifestRevision: universePublication?.manifest.revision ?? null
 }, null, 2));
 
 function parseArgs(values) {
@@ -258,6 +291,126 @@ async function loadAndValidateBundle(manifestFile, calendarFile, bootstrapSeedMo
       bootstrapSeed: bootstrapSeedMode
     }
   };
+}
+
+async function loadAndValidateUniverseManifest(file) {
+  const text = await fs.readFile(file, "utf8");
+  const manifest = parseJson(text, file);
+  if (
+    manifest.version !== 1 ||
+    typeof manifest.generatedAt !== "string" ||
+    !Number.isFinite(Date.parse(manifest.generatedAt)) ||
+    !["code-list", "realtime"].includes(manifest.source) ||
+    !isRevision(manifest.revision) ||
+    (manifest.previousRevision !== null && !isRevision(manifest.previousRevision)) ||
+    !Array.isArray(manifest.members) ||
+    manifest.members.length === 0
+  ) {
+    throw new Error("Universe manifest has invalid version or metadata.");
+  }
+  const expectedRevision = createHash("sha256")
+    .update(canonicalJson({ version: manifest.version, source: manifest.source, members: manifest.members }))
+    .digest("hex")
+    .slice(0, 16);
+  if (manifest.revision !== expectedRevision) {
+    throw new Error("Universe manifest revision does not match its members.");
+  }
+  let activeCount = 0;
+  const codes = [];
+  for (const member of manifest.members) {
+    if (
+      !member ||
+      !/^\d{6}$/.test(member.code) ||
+      typeof member.name !== "string" ||
+      !member.name.trim() ||
+      typeof member.industry !== "string" ||
+      !["active", "stale"].includes(member.status) ||
+      typeof member.firstSeenAt !== "string" ||
+      !Number.isFinite(Date.parse(member.firstSeenAt)) ||
+      (member.status === "stale" && (
+        typeof member.staleSinceAt !== "string" || !Number.isFinite(Date.parse(member.staleSinceAt))
+      )) ||
+      (member.status === "active" && member.staleSinceAt !== undefined)
+    ) {
+      throw new Error(`Universe manifest contains an invalid member: ${JSON.stringify(member)}.`);
+    }
+    codes.push(member.code);
+    activeCount += Number(member.status === "active");
+  }
+  if (
+    JSON.stringify(codes) !== JSON.stringify([...codes].sort()) ||
+    new Set(codes).size !== codes.length ||
+    manifest.memberCount !== codes.length ||
+    manifest.activeCount !== activeCount ||
+    manifest.staleCount !== codes.length - activeCount
+  ) {
+    throw new Error("Universe manifest member ordering or counts are inconsistent.");
+  }
+  validateUniverseDelta(manifest.delta);
+  return { manifest, text };
+}
+
+function validateBundleUniverse(bundle, universe, bootstrapSeedMode) {
+  const revision = bundle.manifest.universeManifestRevision;
+  if (bootstrapSeedMode) {
+    if (universe || revision !== undefined) {
+      throw new Error("Bootstrap seed publication cannot accept a universe manifest.");
+    }
+    return;
+  }
+  if (revision === undefined && !universe) return;
+  if (!universe || revision !== universe.manifest.revision) {
+    throw new Error("History bundle and universe manifest revisions do not match.");
+  }
+  for (const artifact of bundle.artifacts) {
+    if (
+      artifact.snapshot.meta?.universeManifestRevision !== universe.manifest.revision ||
+      artifact.snapshot.meta?.universeManifestMemberCount !== universe.manifest.memberCount ||
+      artifact.snapshot.meta?.universeStaleCount !== universe.manifest.staleCount
+    ) {
+      throw new Error(`Snapshot ${artifact.date} does not match the universe manifest.`);
+    }
+  }
+}
+
+function validateUniverseDelta(delta) {
+  const listFields = ["addedCodes", "newlyMissingCodes", "stillStaleCodes", "reactivatedCodes", "renamedCodes"];
+  if (
+    !delta ||
+    typeof delta.bootstrap !== "boolean" ||
+    !Number.isInteger(delta.candidateCount) ||
+    delta.candidateCount <= 0 ||
+    !Number.isInteger(delta.memberDenominator) ||
+    delta.memberDenominator <= 0 ||
+    !Number.isInteger(delta.activeDenominator) ||
+    delta.activeDenominator <= 0 ||
+    !Number.isFinite(delta.maximumDeltaRate) ||
+    delta.maximumDeltaRate < 0 ||
+    delta.maximumDeltaRate > 1 ||
+    !Number.isFinite(delta.addedRate) ||
+    !Number.isFinite(delta.missingRate) ||
+    listFields.some((field) => !Array.isArray(delta[field]) || delta[field].some((code) => !/^\d{6}$/.test(code)))
+  ) {
+    throw new Error("Universe manifest delta is malformed.");
+  }
+  const expectedAddedRate = delta.bootstrap ? 0 : delta.addedCodes.length / delta.memberDenominator;
+  const expectedMissingRate = delta.bootstrap ? 0 : delta.newlyMissingCodes.length / delta.activeDenominator;
+  if (
+    Math.abs(delta.addedRate - expectedAddedRate) > 0.00000001 ||
+    Math.abs(delta.missingRate - expectedMissingRate) > 0.00000001 ||
+    delta.addedRate > delta.maximumDeltaRate + Number.EPSILON ||
+    delta.missingRate > delta.maximumDeltaRate + Number.EPSILON
+  ) {
+    throw new Error("Universe manifest delta exceeds its accepted threshold or has inconsistent rates.");
+  }
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function validateSnapshot(snapshot, date) {
@@ -419,6 +572,12 @@ function validateExistingIndex(index) {
       (entry.bootstrapSeed !== undefined && typeof entry.bootstrapSeed !== "boolean") ||
       (entry.publishedAt !== undefined && typeof entry.publishedAt !== "string") ||
       (entry.revision !== undefined && !isRevision(entry.revision)) ||
+      (entry.universeManifestRevision !== undefined && !isRevision(entry.universeManifestRevision)) ||
+      (entry.universeManifestKey !== undefined && !isUniverseManifestKey(
+        entry.universeManifestKey,
+        entry.universeManifestRevision
+      )) ||
+      ((entry.universeManifestKey === undefined) !== (entry.universeManifestRevision === undefined)) ||
       (entry.snapshotKey !== undefined && !isPayloadKey(entry.snapshotKey, "history-snapshot:", entry.date)) ||
       (entry.closeKey !== undefined && !isPayloadKey(entry.closeKey, "market-close:", entry.date))
     ) {
@@ -498,6 +657,13 @@ async function verifyRemotePublication(kv, bundle, published, skippedPayloads, l
     if (!entry || entry.revision !== artifact.revision || entry.snapshotKey !== artifact.snapshotKey || entry.closeKey !== artifact.closeKey) {
       throw new Error(`Remote index pointer verification failed for ${artifact.date}.`);
     }
+    if (
+      artifact.universeManifestKey &&
+      (entry.universeManifestKey !== artifact.universeManifestKey ||
+        entry.universeManifestRevision !== artifact.universeManifestRevision)
+    ) {
+      throw new Error(`Remote universe pointer verification failed for ${artifact.date}.`);
+    }
     for (const [key, expectedDate] of [
       [entry.snapshotKey, artifact.date],
       [entry.closeKey, artifact.date],
@@ -508,6 +674,12 @@ async function verifyRemotePublication(kv, bundle, published, skippedPayloads, l
       const value = parseJson(await kv.get(key), key);
       if ((value.marketDate ?? value.triggerDate) !== expectedDate) {
         throw new Error(`Remote key ${key} has the wrong market date.`);
+      }
+    }
+    if (entry.universeManifestKey) {
+      const universe = parseJson(await kv.get(entry.universeManifestKey), entry.universeManifestKey);
+      if (universe.revision !== entry.universeManifestRevision) {
+        throw new Error(`Remote universe manifest ${entry.universeManifestKey} has the wrong revision.`);
       }
     }
   }
@@ -598,6 +770,10 @@ function isPayloadKey(value, prefix, date) {
   if (typeof value !== "string") return false;
   const canonical = `${prefix}${date}`;
   return value === canonical || (value.startsWith(`${canonical}:v:`) && isRevision(value.slice(canonical.length + 3)));
+}
+
+function isUniverseManifestKey(value, revision) {
+  return isRevision(revision) && value === `signal-universe-manifest:v:${revision}`;
 }
 
 function requiredEnv(name) {

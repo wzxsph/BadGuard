@@ -133,28 +133,55 @@ test("full production code-list snapshots reject stock-count shrink above five p
   });
 });
 
-test("snapshot and close-table completeness requires matching counts at ninety percent", () => {
+test("snapshot completeness requires 98% history and classifies 90% exact-close coverage", () => {
   const snapshot = {
     meta: {
       stockCount: 100,
-      historySuccessCount: 90,
-      historySuccessRate: 0.9,
-      failureCount: 10,
+      historySuccessCount: 98,
+      historySuccessRate: 0.98,
+      failureCount: 2,
+      providerMissingCount: 2,
       exactCloseCount: 90,
-      exactCloseCoverage: 0.9
+      exactCloseCoverage: 0.9,
+      notListedCount: 3,
+      suspendedCount: 5
     }
   };
-  const close = { closes: Object.fromEntries(Array.from({ length: 90 }, (_, index) => [String(index).padStart(6, "0"), 10])) };
+  const close = {
+    closes: Object.fromEntries(Array.from({ length: 90 }, (_, index) => [String(index).padStart(6, "0"), 10])),
+    missingCodes: Array.from({ length: 10 }, (_, index) => String(index + 90).padStart(6, "0")),
+    providerMissingCodes: ["000090", "000091"],
+    notListedCodes: ["000092", "000093", "000094"],
+    suspendedCodes: ["000095", "000096", "000097", "000098", "000099"]
+  };
 
   expect(assertSnapshotCompleteness(snapshot, close)).toMatchObject({
     stockCount: 100,
-    historySuccessCount: 90,
+    historySuccessCount: 98,
     exactCloseCount: 90
   });
   expect(() => assertSnapshotCompleteness(
-    { ...snapshot, meta: { ...snapshot.meta, historySuccessCount: 89, historySuccessRate: 0.89, failureCount: 11 } },
-    close
-  )).toThrow(/at least 90%/);
+    {
+      ...snapshot,
+      meta: {
+        ...snapshot.meta,
+        historySuccessCount: 97,
+        historySuccessRate: 0.97,
+        failureCount: 3,
+        providerMissingCount: 3,
+        notListedCount: 2
+      }
+    },
+    {
+      ...close,
+      providerMissingCodes: ["000090", "000091", "000092"],
+      notListedCodes: ["000093", "000094"]
+    }
+  )).toThrow(/at least 98%/);
+  expect(() => assertSnapshotCompleteness(
+    snapshot,
+    { ...close, providerMissingCodes: ["000090", "000091", "000092"] }
+  )).toThrow(/not partitioned/);
   expect(() => assertSnapshotCompleteness(snapshot, { closes: { ...close.closes, "999999": 10 } })).toThrow(/counts do not match/);
   expect(() => assertSnapshotCompleteness(
     { ...snapshot, meta: { ...snapshot.meta, buildMode: "production", perBoardLimit: 80 } },

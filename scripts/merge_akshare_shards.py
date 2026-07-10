@@ -22,6 +22,7 @@ try:
         write_json,
     )
     from scripts.prepare_akshare_context import load_and_validate_context
+    from scripts.universe_manifest import load_optional_universe_manifest, validate_universe_manifest
 except ModuleNotFoundError:  # Direct `python scripts/...py` execution.
     from build_akshare_shard import SHARD_VERSION, select_shard_stocks  # type: ignore[no-redef]
     from build_akshare_snapshot import (  # type: ignore[no-redef]
@@ -34,11 +35,19 @@ except ModuleNotFoundError:  # Direct `python scripts/...py` execution.
         write_json,
     )
     from prepare_akshare_context import load_and_validate_context  # type: ignore[no-redef]
+    from universe_manifest import load_optional_universe_manifest, validate_universe_manifest  # type: ignore[no-redef]
+
+
+MIN_HISTORY_SUCCESS_COVERAGE = 0.98
+MIN_EXACT_CLOSE_COVERAGE = 0.90
 
 
 def main() -> None:
     args = parse_args()
     context = load_and_validate_context(args.context)
+    universe_manifest = load_optional_universe_manifest(args.universe_manifest)
+    if universe_manifest is None:  # pragma: no cover - required CLI argument
+        raise SystemExit("A validated universe manifest is required.")
     shard_paths = sorted(Path(args.shard_dir).rglob("shard-*.json"))
     if not shard_paths:
         raise SystemExit(f"No shard JSON files found below {args.shard_dir}.")
@@ -50,6 +59,7 @@ def main() -> None:
         Path(args.close_output),
         Path(args.calendar_output),
         Path(args.artifact_dir),
+        universe_manifest=universe_manifest,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
 
@@ -62,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--close-output", default="data/market-close.json")
     parser.add_argument("--calendar-output", default="data/trading-calendar.json")
     parser.add_argument("--artifact-dir", default="data/publish")
+    parser.add_argument("--universe-manifest", required=True)
     return parser.parse_args()
 
 
@@ -73,8 +84,11 @@ def merge_shards(
     calendar_output_path: Path,
     artifact_dir: Path,
     now: datetime | None = None,
+    universe_manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_shards(context, shards)
+    if universe_manifest is not None:
+        validate_context_universe(context, universe_manifest)
     now = now or datetime.now(CHINA_TZ)
     stock_codes = {str(stock["code"]) for stock in context["stocks"]}
     history_success_count = sum(int(shard["historySuccessCount"]) for shard in shards)
@@ -82,11 +96,21 @@ def merge_shards(
         "successful sharded history fetches",
         history_success_count,
         context["stockCount"],
+        minimum=MIN_HISTORY_SUCCESS_COVERAGE,
     )
+    success_codes = {
+        str(code)
+        for shard in shards
+        for code in shard["successCodes"]
+    }
+    provider_missing_codes = sorted(stock_codes - success_codes)
     provider_counts: Counter[str] = Counter()
     for shard in shards:
         provider_counts.update(shard["providerCounts"])
     cache_hit_count = sum(int(shard["cacheHitCount"]) for shard in shards)
+    cache_full_hit_count = sum(int(shard["cacheFullHitCount"]) for shard in shards)
+    cache_incremental_hit_count = sum(int(shard["cacheIncrementalHitCount"]) for shard in shards)
+    cache_refresh_count = sum(int(shard["cacheRefreshCount"]) for shard in shards)
 
     if context["allowProviderFallback"]:
         source_label = (
@@ -105,12 +129,22 @@ def merge_shards(
         "historySuccessCount": history_success_count,
         "historySuccessRate": history_success_rate,
         "failureCount": context["stockCount"] - history_success_count,
+        "providerMissingCount": len(provider_missing_codes),
         "buildMode": context["buildMode"],
         "perBoardLimit": context["perBoard"],
         "requiredHistoryCodeCount": context["requiredHistoryCodeCount"],
         "shardCount": context["shardCount"],
         "historyCacheHitCount": cache_hit_count,
+        "historyCacheFullHitCount": cache_full_hit_count,
+        "historyCacheIncrementalHitCount": cache_incremental_hit_count,
+        "historyCacheRefreshCount": cache_refresh_count,
+        "historyRetryRounds": context.get("historyRetryRounds", 1),
         "runContextHash": context["contextHash"],
+        **({
+            "universeManifestRevision": universe_manifest["revision"],
+            "universeManifestMemberCount": universe_manifest["memberCount"],
+            "universeStaleCount": universe_manifest["staleCount"],
+        } if universe_manifest is not None else {}),
     }
 
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -122,10 +156,14 @@ def merge_shards(
         rows: list[dict[str, Any]] = []
         closes: dict[str, float] = {}
         baseline_closes: dict[str, dict[str, float]] = {}
+        not_listed_codes: set[str] = set()
+        suspended_codes: set[str] = set()
         for shard in shards:
             date_payload = shard["dates"][target]
             rows.extend(date_payload["rows"])
             merge_unique_map(closes, date_payload["closes"], f"{target} closes")
+            not_listed_codes.update(date_payload["notListedCodes"])
+            suspended_codes.update(date_payload["suspendedCodes"])
             for baseline_date, values in date_payload["baselineCloses"].items():
                 target_map = baseline_closes.setdefault(baseline_date, {})
                 merge_unique_map(target_map, values, f"{target} baseline {baseline_date}")
@@ -135,6 +173,7 @@ def merge_shards(
             f"sharded exact-date closes for {target}",
             exact_close_count,
             context["stockCount"],
+            minimum=MIN_EXACT_CLOSE_COVERAGE,
         )
         artifact_source = context["targetSources"][target]
         snapshot = assemble_snapshot(
@@ -146,6 +185,8 @@ def merge_shards(
                 "snapshotSource": artifact_source,
                 "exactCloseCount": exact_close_count,
                 "exactCloseCoverage": exact_close_coverage,
+                "notListedCount": len(not_listed_codes),
+                "suspendedCount": len(suspended_codes),
             },
             target,
         )
@@ -163,6 +204,9 @@ def merge_shards(
             "updatedAt": now.isoformat(),
             "adjust": context["adjust"],
             "missingCodes": sorted(stock_codes - set(closes)),
+            "providerMissingCodes": provider_missing_codes,
+            "notListedCodes": sorted(not_listed_codes),
+            "suspendedCodes": sorted(suspended_codes),
         }
         snapshot_path = artifact_dir / f"history-snapshot-{target}.json"
         close_path = artifact_dir / f"market-close-{target}.json"
@@ -185,6 +229,9 @@ def merge_shards(
                 "closeCount": exact_close_count,
                 "closeCoverage": exact_close_coverage,
                 "rowCount": sum(len(board["rows"]) for board in snapshot["boards"]),
+                "providerMissingCount": len(provider_missing_codes),
+                "notListedCount": len(not_listed_codes),
+                "suspendedCount": len(suspended_codes),
             }
         )
 
@@ -201,6 +248,7 @@ def merge_shards(
             "calendarPath": str(calendar_output_path),
             "contextHash": context["contextHash"],
             "shardCount": context["shardCount"],
+            **({"universeManifestRevision": universe_manifest["revision"]} if universe_manifest is not None else {}),
             "artifacts": artifacts,
         },
     )
@@ -211,6 +259,10 @@ def merge_shards(
         "historySuccessCount": history_success_count,
         "historySuccessRate": history_success_rate,
         "cacheHitCount": cache_hit_count,
+        "cacheFullHitCount": cache_full_hit_count,
+        "cacheIncrementalHitCount": cache_incremental_hit_count,
+        "cacheRefreshCount": cache_refresh_count,
+        **({"universeManifestRevision": universe_manifest["revision"]} if universe_manifest is not None else {}),
         "dates": date_summaries,
         "manifest": str(artifact_dir / "manifest.json"),
         "kvKey": CACHE_KEY,
@@ -256,6 +308,15 @@ def validate_shards(context: dict[str, Any], shards: list[dict[str, Any]]) -> No
             raise ValueError(f"Shard {index} failures do not account for its unsuccessful stocks.")
         if sum(shard.get("providerCounts", {}).values()) != len(success_codes):
             raise ValueError(f"Shard {index} provider counts do not match successes.")
+        cache_full = shard.get("cacheFullHitCount")
+        cache_incremental = shard.get("cacheIncrementalHitCount")
+        cache_refresh = shard.get("cacheRefreshCount")
+        if (
+            not all(isinstance(value, int) and value >= 0 for value in [cache_full, cache_incremental, cache_refresh])
+            or shard.get("cacheHitCount") != cache_full + cache_incremental
+            or cache_full + cache_incremental + cache_refresh > len(success_codes)
+        ):
+            raise ValueError(f"Shard {index} cache counters are inconsistent.")
         if set(shard.get("dates", {})) != set(context["targets"]):
             raise ValueError(f"Shard {index} dates do not match the prepared targets.")
         for target, payload in shard["dates"].items():
@@ -268,9 +329,37 @@ def validate_shards(context: dict[str, Any], shards: list[dict[str, Any]]) -> No
             baselines = payload.get("baselineCloses")
             if not isinstance(baselines, dict) or any(not set(values).issubset(success_codes) for values in baselines.values()):
                 raise ValueError(f"Shard {index}/{target} baselines are invalid.")
+            not_listed_codes = payload.get("notListedCodes")
+            suspended_codes = payload.get("suspendedCodes")
+            if (
+                not isinstance(not_listed_codes, list)
+                or not isinstance(suspended_codes, list)
+                or len(not_listed_codes) != len(set(not_listed_codes))
+                or len(suspended_codes) != len(set(suspended_codes))
+                or set(not_listed_codes).intersection(suspended_codes)
+                or set(not_listed_codes).union(suspended_codes) != set(success_codes) - set(payload["closes"])
+            ):
+                raise ValueError(f"Shard {index}/{target} missing-close classifications are invalid.")
 
     if seen_codes != {stock.code for stock in all_stocks}:
         raise ValueError("Merged shard assignments do not cover the prepared universe.")
+
+
+def validate_context_universe(context: dict[str, Any], universe_manifest: dict[str, Any]) -> None:
+    manifest = validate_universe_manifest(universe_manifest)
+    member_codes = {member["code"] for member in manifest["members"]}
+    context_codes = {str(stock["code"]) for stock in context["stocks"]}
+    required_only_codes = set(context.get("requiredOnlyCodes", []))
+    stale_codes = {member["code"] for member in manifest["members"] if member["status"] == "stale"}
+    if (
+        context.get("universeManifestRevision") != manifest["revision"]
+        or context.get("universeManifestMemberCount") != manifest["memberCount"]
+        or context.get("universeStaleCount") != manifest["staleCount"]
+        or set(context.get("universeStaleCodes", [])) != stale_codes
+        or context_codes != member_codes | required_only_codes
+        or member_codes.intersection(required_only_codes)
+    ):
+        raise ValueError("Run context does not match the proposed universe manifest.")
 
 
 def merge_unique_map(destination: dict[str, float], source: dict[str, float], label: str) -> None:

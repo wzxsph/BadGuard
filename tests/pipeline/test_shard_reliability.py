@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import io
+import gzip
+import json
 import tempfile
 import unittest
+from collections import Counter
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
@@ -12,18 +15,39 @@ import requests
 
 from scripts.build_akshare_shard import (
     fetch_shard_histories,
+    fetch_shard_histories_with_retries,
     history_cache_metadata,
     history_cache_path,
+    load_or_fetch_history,
     read_history_cache,
+    read_history_cache_entry,
     write_history_cache,
 )
 from scripts.build_akshare_snapshot import (
     StockHistory,
     StockItem,
+    exact_close,
     fetch_eastmoney_history,
     fetch_history,
 )
 from scripts.http_timeout import install_default_requests_timeout
+
+
+def make_bars(prices: dict[str, float]) -> pd.DataFrame:
+    return pd.DataFrame([
+        {
+            "date": date,
+            "open": close,
+            "close": close,
+            "high": close + 0.1,
+            "low": close - 0.1,
+            "volume": 1_000_000,
+            "amount": 300_000_000,
+            "turnover_rate": 1.5,
+            "float_market_cap": 8_000_000_000,
+        }
+        for date, close in prices.items()
+    ])
 
 
 class ProviderTimeoutTests(unittest.TestCase):
@@ -129,9 +153,10 @@ class HistoryCacheTests(unittest.TestCase):
             }]
         )
 
-    def test_cache_round_trip_and_context_isolation(self) -> None:
+    def test_cache_round_trip_and_identity_is_stable_across_dates(self) -> None:
         metadata = history_cache_metadata(self.stock, self.context)
         changed_context = {**self.context, "endDate": "20260713"}
+        changed_adjust = {**self.context, "adjust": "hfq"}
 
         with tempfile.TemporaryDirectory() as directory:
             cache_dir = Path(directory)
@@ -143,9 +168,13 @@ class HistoryCacheTests(unittest.TestCase):
             self.assertIsNotNone(cached)
             self.assertEqual(cached.provider, "eastmoney")
             self.assertEqual(cached.bars.iloc[0]["date"], "2026-07-10")
-            self.assertNotEqual(
+            self.assertEqual(
                 path,
                 history_cache_path(cache_dir, history_cache_metadata(self.stock, changed_context)),
+            )
+            self.assertNotEqual(
+                path,
+                history_cache_path(cache_dir, history_cache_metadata(self.stock, changed_adjust)),
             )
 
     def test_corrupt_cache_is_ignored(self) -> None:
@@ -158,8 +187,216 @@ class HistoryCacheTests(unittest.TestCase):
 
             self.assertIsNone(read_history_cache(path, metadata))
 
+    def test_cross_day_cache_fetches_only_overlap_and_incremental_tail(self) -> None:
+        context = {
+            **self.context,
+            "startDate": "20260601",
+            "endDate": "20260710",
+            "sleep": 0,
+            "requestTimeout": 12,
+            "requestAttempts": 2,
+        }
+        cached_bars = make_bars({"2026-06-02": 9.0, "2026-07-08": 10.0, "2026-07-09": 10.1})
+        incremental_bars = make_bars({"2026-07-08": 10.0, "2026-07-09": 10.1, "2026-07-10": 10.2})
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            metadata = history_cache_metadata(self.stock, context)
+            path = history_cache_path(cache_dir, metadata)
+            write_history_cache(
+                path,
+                metadata,
+                StockHistory(self.stock, cached_bars, "eastmoney"),
+                fetched_start="2026-06-01",
+                fetched_through="2026-07-09",
+            )
+            with patch(
+                "scripts.build_akshare_shard.fetch_stock_history",
+                return_value=StockHistory(self.stock, incremental_bars, "eastmoney"),
+            ) as fetch:
+                history, cache_mode = load_or_fetch_history(self.stock, context, cache_dir)
+
+            entry = read_history_cache_entry(path, metadata)
+
+        self.assertEqual(cache_mode, "incremental")
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(fetch.call_args.args[1:3], ("20260629", "20260710"))
+        self.assertEqual(history.bars["date"].tolist(), ["2026-06-02", "2026-07-08", "2026-07-09", "2026-07-10"])
+        self.assertEqual(entry.fetched_through, "2026-07-10")
+
+    def test_qfq_overlap_change_forces_complete_refresh(self) -> None:
+        context = {
+            **self.context,
+            "startDate": "20260601",
+            "endDate": "20260710",
+            "sleep": 0,
+            "requestTimeout": 12,
+            "requestAttempts": 2,
+        }
+        cached_bars = make_bars({"2026-06-02": 9.0, "2026-07-08": 10.0, "2026-07-09": 10.1})
+        rebased_tail = make_bars({"2026-07-08": 9.5, "2026-07-09": 9.6, "2026-07-10": 10.2})
+        rebased_full = make_bars({"2026-06-02": 8.5, "2026-07-08": 9.5, "2026-07-09": 9.6, "2026-07-10": 10.2})
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            metadata = history_cache_metadata(self.stock, context)
+            path = history_cache_path(cache_dir, metadata)
+            write_history_cache(
+                path,
+                metadata,
+                StockHistory(self.stock, cached_bars, "eastmoney"),
+                fetched_start="2026-06-01",
+                fetched_through="2026-07-09",
+            )
+            with patch(
+                "scripts.build_akshare_shard.fetch_stock_history",
+                side_effect=[
+                    StockHistory(self.stock, rebased_tail, "eastmoney"),
+                    StockHistory(self.stock, rebased_full, "eastmoney"),
+                ],
+            ) as fetch:
+                history, cache_mode = load_or_fetch_history(self.stock, context, cache_dir)
+
+        self.assertEqual(cache_mode, "refresh")
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(fetch.call_args_list[1].args[1:3], ("20260601", "20260710"))
+        self.assertEqual(history.bars.iloc[0]["close"], 8.5)
+
+    def test_suspension_is_cached_as_queried_through_without_filling_close(self) -> None:
+        context = {
+            **self.context,
+            "startDate": "20260601",
+            "endDate": "20260710",
+            "sleep": 0,
+            "requestTimeout": 12,
+            "requestAttempts": 2,
+        }
+        suspended_bars = make_bars({"2026-06-02": 9.0, "2026-07-08": 10.0})
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            metadata = history_cache_metadata(self.stock, context)
+            path = history_cache_path(cache_dir, metadata)
+            write_history_cache(
+                path,
+                metadata,
+                StockHistory(self.stock, suspended_bars, "eastmoney"),
+                fetched_start="2026-06-01",
+                fetched_through="2026-07-09",
+            )
+            with patch(
+                "scripts.build_akshare_shard.fetch_stock_history",
+                return_value=StockHistory(self.stock, suspended_bars, "eastmoney"),
+            ) as fetch:
+                history, cache_mode = load_or_fetch_history(self.stock, context, cache_dir)
+            with patch("scripts.build_akshare_shard.fetch_stock_history") as second_fetch:
+                cached_history, second_mode = load_or_fetch_history(self.stock, context, cache_dir)
+
+        self.assertEqual(cache_mode, "incremental")
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(second_mode, "full")
+        second_fetch.assert_not_called()
+        self.assertIsNone(exact_close(history.bars, "2026-07-10"))
+        self.assertIsNone(exact_close(cached_history.bars, "2026-07-10"))
+
+    def test_valid_v1_cache_is_migrated_without_refetching(self) -> None:
+        context = {
+            **self.context,
+            "startDate": "20260601",
+            "endDate": "20260710",
+            "sleep": 0,
+            "requestTimeout": 12,
+            "requestAttempts": 2,
+        }
+        bars = make_bars({"2026-06-02": 9.0, "2026-07-10": 10.0})
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_root = Path(directory)
+            cache_dir = cache_root / "akshare-history" / "3"
+            v2_metadata = history_cache_metadata(self.stock, context)
+            v2_path = history_cache_path(cache_dir, v2_metadata)
+            legacy_path = cache_root / "akshare-history-v1" / "7" / "000001-legacy-v1.json.gz"
+            legacy_path.parent.mkdir(parents=True, exist_ok=True)
+            legacy_metadata = {
+                **v2_metadata,
+                "version": 1,
+                "startDate": "20260601",
+                "endDate": "20260710",
+                "requestAttempts": 2,
+            }
+            with gzip.open(legacy_path, "wt", encoding="utf-8") as handle:
+                json.dump({
+                    "metadata": legacy_metadata,
+                    "provider": "eastmoney",
+                    "bars": json.loads(bars.to_json(orient="records", force_ascii=False)),
+                }, handle)
+
+            with patch("scripts.build_akshare_shard.fetch_stock_history") as fetch:
+                history, cache_mode = load_or_fetch_history(self.stock, context, cache_dir)
+
+            migrated = read_history_cache_entry(v2_path, v2_metadata)
+
+        fetch.assert_not_called()
+        self.assertEqual(cache_mode, "full")
+        self.assertEqual(history.bars.iloc[-1]["date"], "2026-07-10")
+        self.assertIsNotNone(migrated)
+
 
 class ProgressTests(unittest.TestCase):
+    def test_retry_rounds_only_request_the_unresolved_subset(self) -> None:
+        stocks = [StockItem(f"{index:06d}", f"测试{index}", "测试") for index in range(3)]
+        bars = make_bars({"2026-07-10": 10.0})
+        rounds = [
+            (
+                [StockHistory(stocks[0], bars, "eastmoney")],
+                [
+                    {"code": stocks[1].code, "name": stocks[1].name, "error": "temporary"},
+                    {"code": stocks[2].code, "name": stocks[2].name, "error": "temporary"},
+                ],
+                Counter({"eastmoney": 1}),
+                Counter({"miss": 1}),
+            ),
+            (
+                [StockHistory(stocks[1], bars, "eastmoney")],
+                [{"code": stocks[2].code, "name": stocks[2].name, "error": "temporary"}],
+                Counter({"eastmoney": 1}),
+                Counter({"miss": 1}),
+            ),
+            (
+                [StockHistory(stocks[2], bars, "eastmoney")],
+                [],
+                Counter({"eastmoney": 1}),
+                Counter({"miss": 1}),
+            ),
+        ]
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("scripts.build_akshare_shard.fetch_shard_histories", side_effect=rounds) as fetch,
+            patch("scripts.build_akshare_shard.time.sleep"),
+        ):
+            histories, failures, providers, cache_counts = fetch_shard_histories_with_retries(
+                stocks,
+                {
+                    "historyRetryRounds": 4,
+                    "historyRetryBackoffSeconds": 0,
+                    "softDeadlineMinutes": 5,
+                    "shardCount": 1,
+                },
+                Path(directory),
+                heartbeat_seconds=999,
+                shard_index=0,
+            )
+
+        self.assertEqual([history.stock.code for history in histories], [stock.code for stock in stocks])
+        self.assertEqual(failures, [])
+        self.assertEqual(providers, Counter({"eastmoney": 3}))
+        self.assertEqual(cache_counts, Counter({"miss": 3}))
+        self.assertEqual(
+            [[stock.code for stock in call.args[0]] for call in fetch.call_args_list],
+            [[stock.code for stock in stocks], [stocks[1].code, stocks[2].code], [stocks[2].code]],
+        )
+
     def test_fast_completions_do_not_emit_one_log_line_per_stock(self) -> None:
         stocks = [StockItem(f"{index:06d}", f"测试{index}", "测试") for index in range(30)]
         bars = pd.DataFrame(
@@ -175,7 +412,7 @@ class ProgressTests(unittest.TestCase):
         )
 
         def complete(stock, _context, _cache_dir):
-            return StockHistory(stock, bars, "eastmoney"), False
+            return StockHistory(stock, bars, "eastmoney"), "miss"
 
         output = io.StringIO()
         with (

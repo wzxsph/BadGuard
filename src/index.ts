@@ -1,4 +1,5 @@
 import { getSnapshot, refreshSnapshot, type Env } from "./data-source";
+import { getSnapshotDataQuality, withSnapshotDataQuality } from "./data-quality";
 import {
   HistoryNotFoundError,
   HistoryStorageUnavailableError,
@@ -81,7 +82,10 @@ export default {
       }
 
       try {
-        return Response.json(await getHistoryDetail(env, date), { headers: JSON_HEADERS });
+        const detail = await getHistoryDetail(env, date);
+        return Response.json(withSnapshotDataQuality(detail, {
+          bootstrapSeed: detail.entry.bootstrapSeed
+        }), { headers: JSON_HEADERS });
       } catch (error) {
         return historyErrorResponse(error);
       }
@@ -89,7 +93,10 @@ export default {
 
     if (url.pathname === "/api/signals") {
       const snapshot = await getSnapshot(env);
-      return Response.json(snapshot, { headers: JSON_HEADERS });
+      return Response.json({
+        ...snapshot,
+        dataQuality: getSnapshotDataQuality(snapshot)
+      }, { headers: JSON_HEADERS });
     }
 
     if (url.pathname === "/api/refresh" && request.method === "POST") {
@@ -101,7 +108,10 @@ export default {
       }
 
       const snapshot = await refreshSnapshot(env);
-      return Response.json(snapshot, { headers: JSON_HEADERS });
+      return Response.json({
+        ...snapshot,
+        dataQuality: getSnapshotDataQuality(snapshot)
+      }, { headers: JSON_HEADERS });
     }
 
     if (url.pathname === "/api/health") {

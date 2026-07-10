@@ -40,6 +40,7 @@ concurrency:
 env:
   SHARD_COUNT: "8"
   PYTHONUNBUFFERED: "1"
+  UNIVERSE_DELTA_THRESHOLD: "0.01"
 
 jobs:
   bootstrap_seed:
@@ -192,6 +193,7 @@ jobs:
           )"
           export KV_NAMESPACE_ID
           node scripts/fetch_required_history_codes.mjs data/required-history-codes.json
+          node scripts/fetch_universe_manifest.mjs data/prior-universe-manifest.json
 
       - name: Freeze dates and stock universe
         id: prepare
@@ -233,6 +235,9 @@ jobs:
             --output data/run-context.json \
             --calendar-output data/trading-calendar.json \
             --required-codes data/required-history-codes.json \
+            --prior-universe data/prior-universe-manifest.json \
+            --universe-manifest-output data/universe-manifest.json \
+            --max-universe-delta-rate "$UNIVERSE_DELTA_THRESHOLD" \
             --universe-source "$UNIVERSE_SOURCE" \
             --history-source eastmoney \
             --limit "$SCAN_LIMIT" \
@@ -241,6 +246,8 @@ jobs:
             --sleep 0.08 \
             --request-timeout 12 \
             --request-attempts 2 \
+            --history-retry-rounds 4 \
+            --history-retry-backoff-seconds 3 \
             --max-consecutive-failures 12 \
             --soft-deadline-minutes 60 \
             --build-mode "$BUILD_MODE" \
@@ -269,6 +276,8 @@ jobs:
             data/run-context.json
             data/trading-calendar.json
             data/required-history-codes.json
+            data/prior-universe-manifest.json
+            data/universe-manifest.json
           if-no-files-found: error
           retention-days: 7
           overwrite: true
@@ -304,13 +313,77 @@ jobs:
           name: badguard-context-${{ github.run_id }}
           path: data/context
 
-      - name: Restore this shard's completed histories
+      # One-time migration bridge: v1 used index-based assignment, so every
+      # stable v2 shard may own codes from any prior shard cache.
+      - name: Restore legacy shard 0 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/0
+          key: badguard-akshare-v1-migration-0-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-0-
+
+      - name: Restore legacy shard 1 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/1
+          key: badguard-akshare-v1-migration-1-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-1-
+
+      - name: Restore legacy shard 2 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/2
+          key: badguard-akshare-v1-migration-2-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-2-
+
+      - name: Restore legacy shard 3 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/3
+          key: badguard-akshare-v1-migration-3-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-3-
+
+      - name: Restore legacy shard 4 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/4
+          key: badguard-akshare-v1-migration-4-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-4-
+
+      - name: Restore legacy shard 5 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/5
+          key: badguard-akshare-v1-migration-5-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-5-
+
+      - name: Restore legacy shard 6 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/6
+          key: badguard-akshare-v1-migration-6-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-6-
+
+      - name: Restore legacy shard 7 for migration
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/akshare-history/7
+          key: badguard-akshare-v1-migration-7-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+          restore-keys: badguard-akshare-v1-222ae30b9e62177de41320db857fd15e0dd25115faf405925fb6c2d152bea83d-7-
+
+      - name: Stage legacy cache tree for v2 migration
+        run: |
+          if [ -d .cache/akshare-history ]; then
+            mv .cache/akshare-history .cache/akshare-history-v1
+          fi
+
+      - name: Restore this shard's completed v2 histories
         uses: actions/cache@v4
         with:
           path: .cache/akshare-history/${{ matrix.shard }}
-          key: badguard-akshare-v1-${{ needs.prepare.outputs.context_hash }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: badguard-akshare-v2-${{ matrix.shard }}-${{ needs.prepare.outputs.context_hash }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
-            badguard-akshare-v1-${{ needs.prepare.outputs.context_hash }}-${{ matrix.shard }}-
+            badguard-akshare-v2-${{ matrix.shard }}-
 
       - name: Fetch and evaluate shard
         run: |
@@ -380,13 +453,15 @@ jobs:
             --output data/latest.json \
             --close-output data/market-close.json \
             --calendar-output data/trading-calendar.json \
-            --artifact-dir data/publish
+            --artifact-dir data/publish \
+            --universe-manifest data/context/universe-manifest.json
 
       - name: Validate history artifacts
         run: |
           node scripts/publish_history.mjs \
             --manifest data/publish/manifest.json \
             --calendar data/trading-calendar.json \
+            --universe-manifest data/context/universe-manifest.json \
             --validate-only
 
           node --input-type=module <<'JS'
@@ -412,6 +487,7 @@ jobs:
           name: badguard-history-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             data/context/run-context.json
+            data/context/universe-manifest.json
             data/shards/shard-*.json
             data/publish/manifest.json
             data/publish/history-snapshot-*.json
@@ -442,7 +518,8 @@ jobs:
         run: |
           node scripts/publish_history.mjs \
             --manifest data/publish/manifest.json \
-            --calendar data/trading-calendar.json
+            --calendar data/trading-calendar.json \
+            --universe-manifest data/context/universe-manifest.json
 
       - name: Verify published snapshot
         env:

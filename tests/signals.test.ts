@@ -55,8 +55,46 @@ describe("daily technical signal board", () => {
       buildMode: expect.any(String)
     });
 
-    expect(renderHtml(snapshot)).toContain("数据范围");
-    expect(renderHtml(snapshot)).toContain("收盘覆盖");
+    const html = renderHtml(snapshot);
+    expect(html).toContain("数据范围");
+    expect(html).toContain("扫描股票");
+    expect(html).toContain("500/500 只");
+    expect(html).toContain("499/500 只");
+    expect(html).toContain("股票池版本");
+    expect(html).toContain("股票池沿用");
+    expect(html).toContain("旧版未记录");
+    expect(html).toContain("沿用最近完整收盘榜单");
+    expect(html).toContain("非完整生产快照");
+    expect(html).toContain("数量变化本身不代表数据故障");
+  });
+
+  it("labels a fully covered fixed-universe snapshot as complete production without using signal count", () => {
+    const fullSnapshot: SignalSnapshot = {
+      ...snapshot,
+      meta: {
+        ...snapshot.meta,
+        scanLimit: 0,
+        stockCount: 500,
+        universeSource: "code-list",
+        historySuccessCount: 490,
+        historySuccessRate: 0.98,
+        failureCount: 10,
+        exactCloseCount: 485,
+        exactCloseCoverage: 0.97,
+        perBoardLimit: 0,
+        buildMode: "production",
+        universeManifestRevision: "0123456789abcdef0123456789abcdef",
+        universeManifestMemberCount: 500,
+        universeStaleCount: 0
+      }
+    };
+    const html = renderHtml(fullSnapshot);
+
+    expect(html).toContain("完整生产快照");
+    expect(html).toContain("490/500 只（98%）");
+    expect(html).toContain("485/500 只（97%）");
+    expect(html).toContain("0123456789abcdef…");
+    expect(html).toContain("本次无暂时缺席成员");
   });
 
   it("renders the paper-note tone with a separate professional annotation area", () => {

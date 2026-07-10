@@ -1,3 +1,4 @@
+import { getSnapshotDataQuality, type SnapshotDataQuality } from "./data-quality";
 import type { SignalBoard, SignalRow, SignalSnapshot } from "./types";
 
 export interface HistoryPageEntry {
@@ -33,6 +34,7 @@ export interface HistoryPageDetail {
     boards: HistoryPageBoard[];
     topRows: HistoryPageRow[];
   };
+  dataQuality?: SnapshotDataQuality;
 }
 
 export function renderHistoryHtml(
@@ -42,7 +44,11 @@ export function renderHistoryHtml(
 ): string {
   const readyEntries = normalizeEntries(entries);
   const activeDate = detail?.date || readyEntries[0]?.date || "";
-  const initialPayload = serializeForScript(detail);
+  const quality = detail
+    ? detail.dataQuality ?? getSnapshotDataQuality(detail.snapshot, { bootstrapSeed: detail.entry.bootstrapSeed })
+    : null;
+  const initialDetail = detail && quality ? { ...detail, dataQuality: quality } : detail;
+  const initialPayload = serializeForScript(initialDetail);
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -62,7 +68,7 @@ export function renderHistoryHtml(
     <div>
       <p class="eyebrow">BadGuard · 收盘后的旧纸条</p>
       <h1>历史复盘</h1>
-      <p>从 2026-07-08 起逐个交易日留存四类榜单，后续涨跌统一以入榜日收盘价为基准。</p>
+      <p>历史序列以 2026-07-08 为起点，仅展示已经生成并通过校验的交易日；后续涨跌统一以入榜日收盘价为基准。</p>
     </div>
     <div class="hero-rule">
       <strong>大票优先过滤</strong>
@@ -80,6 +86,7 @@ export function renderHistoryHtml(
         <p class="source-caption" data-history-source>${detail ? sourceLabel(detail.source, detail.entry.bootstrapSeed) : ""}</p>
       </div>
       ${renderDateStrip(readyEntries, activeDate)}
+      <div data-history-quality>${quality ? renderHistoryDataQuality(quality) : ""}</div>
     </section>
 
     <section class="history-board" aria-labelledby="history-board-title">
@@ -201,8 +208,25 @@ function boardTitle(board: Pick<SignalBoard, "id" | "title">): string {
 }
 
 function sourceLabel(source: HistoryPageEntry["source"], bootstrapSeed = false): string {
-  if (bootstrapSeed) return "仓库恢复";
+  if (bootstrapSeed) return "临时恢复种子";
   return source === "backfill" ? "回溯生成" : "实时留存";
+}
+
+function renderHistoryDataQuality(quality: SnapshotDataQuality): string {
+  return `<aside class="history-quality history-quality--${quality.kind}" aria-label="历史快照数据质量">
+    <div class="history-quality__head"><strong>${escapeHtml(quality.label)}</strong><span>${escapeHtml(quality.snapshotTimingLabel)}</span></div>
+    <dl>
+      <div><dt>数据日期</dt><dd>${escapeHtml(quality.dataDate)}</dd></div>
+      <div><dt>扫描股票</dt><dd>${formatNullableCount(quality.stockCount)}</dd></div>
+      <div><dt>行情成功</dt><dd>${formatQualityMetric(quality.historySuccessCount, quality.stockCount, quality.historySuccessRate)}</dd></div>
+      <div><dt>精确收盘</dt><dd>${formatQualityMetric(quality.exactCloseCount, quality.stockCount, quality.exactCloseCoverage)}</dd></div>
+      <div><dt>股票池来源</dt><dd>${escapeHtml(quality.universeSourceLabel)}</dd></div>
+      <div><dt>股票池版本</dt><dd>${escapeHtml(formatUniverseVersion(quality.universeVersion))}</dd></div>
+      <div><dt>股票池沿用</dt><dd>${escapeHtml(quality.universeReuseLabel)}</dd></div>
+    </dl>
+    <p>${escapeHtml(quality.warning)}</p>
+    <p>盘中或当日尚未收盘时沿用最近完整交易日；信号条数由当天规则命中决定，数量变化本身不代表数据故障。</p>
+  </aside>`;
 }
 
 function formatShortDate(date: string): string {
@@ -229,6 +253,19 @@ function formatPercent(value: number): string {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatQualityMetric(count: number | null, total: number | null, rate: number | null): string {
+  const countLabel = count === null || total === null ? "数量未记录" : `${formatNumber(count)}/${formatNumber(total)} 只`;
+  return rate === null ? countLabel : `${countLabel}（${formatNumber(rate * 100)}%）`;
+}
+
+function formatNullableCount(value: number | null): string {
+  return value === null ? "未记录" : `${formatNumber(value)} 只`;
+}
+
+function formatUniverseVersion(value: string | null): string {
+  return value === null ? "旧版未记录" : value.length > 16 ? `${value.slice(0, 16)}…` : value;
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -294,6 +331,18 @@ main { display: grid; gap: 26px; max-width: 1180px; margin: 0 auto; padding: 0 2
 .date-chip small { color: var(--muted); }
 .date-chip[aria-current="date"] { color: white; border-color: var(--indigo); background: var(--indigo); }
 .date-chip[aria-current="date"] small { color: rgba(255,255,255,.78); }
+.history-quality { display: grid; gap: 10px; margin-top: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 7px; background: rgba(232,237,244,.7); }
+.history-quality__head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.history-quality__head strong { color: var(--indigo); }
+.history-quality__head span { color: var(--soft); font-size: .82rem; font-weight: 900; }
+.history-quality dl { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px 14px; margin: 0; }
+.history-quality dt { color: var(--muted); font-size: .74rem; }
+.history-quality dd { margin: 3px 0 0; font-weight: 900; overflow-wrap: anywhere; }
+.history-quality p { margin: 0; color: var(--soft); font-size: .86rem; line-height: 1.55; }
+.history-quality--bootstrap-seed { border-color: rgba(164,71,53,.42); background: rgba(164,71,53,.08); }
+.history-quality--bootstrap-seed .history-quality__head strong,
+.history-quality--partial-or-preview .history-quality__head strong { color: var(--red); }
+.history-quality--complete-production { border-color: rgba(38,112,90,.36); background: rgba(38,112,90,.08); }
 .board-tabs { display: flex; gap: 8px; margin: 18px 0; overflow-x: auto; }
 .board-tabs button { flex: 0 0 auto; padding: 9px 14px; color: var(--soft); border: 1px solid var(--line); border-radius: 5px; background: transparent; cursor: pointer; font-weight: 900; }
 .board-tabs button[aria-selected="true"] { color: white; border-color: var(--red); background: var(--red); }
@@ -338,10 +387,13 @@ main { display: grid; gap: 26px; max-width: 1180px; margin: 0 auto; padding: 0 2
   main { padding: 0 12px 32px; }
   .date-section, .history-board, .review-note { padding: 16px; }
   .history-cards { grid-template-columns: 1fr; }
+  .history-quality dl { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .section-head { align-items: flex-start; }
 }
 @media (max-width: 420px) {
   .history-metrics, .return-grid { grid-template-columns: 1fr 1fr; }
+  .history-quality dl { grid-template-columns: 1fr; }
+  .history-quality__head { align-items: flex-start; flex-direction: column; }
   .date-chip { min-width: 100px; }
 }
 `;
@@ -359,6 +411,7 @@ const HISTORY_JS = `
   const panelsNode = document.querySelector("[data-history-panels]");
   const titleNode = document.querySelector("[data-history-title]");
   const sourceNode = document.querySelector("[data-history-source]");
+  const qualityNode = document.querySelector("[data-history-quality]");
 
   const esc = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
   const number = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);
@@ -366,7 +419,25 @@ const HISTORY_JS = `
   const cap = (value) => Number.isFinite(value) ? number(value / 1e8) + "亿" : "暂无数据";
   const turnover = (value) => Number.isFinite(value) ? number(value) + "%" : "暂无数据";
   const boardName = (id) => ({"low-rebound":"低位反弹","trend-strength":"趋势转强","oversold-repair":"超跌修复","risk-filter":"风险过滤"}[id] || id);
-  const sourceName = (source, bootstrapSeed = false) => bootstrapSeed ? "仓库恢复" : source === "backfill" ? "回溯生成" : "实时留存";
+  const sourceName = (source, bootstrapSeed = false) => bootstrapSeed ? "临时恢复种子" : source === "backfill" ? "回溯生成" : "实时留存";
+
+  function qualityMetric(count, total, rate) {
+    const counts = Number.isInteger(count) && Number.isInteger(total) ? number(count) + "/" + number(total) + " 只" : "数量未记录";
+    return Number.isFinite(rate) ? counts + "（" + number(rate * 100) + "%）" : counts;
+  }
+
+  function qualityHtml(quality) {
+    if (!quality) return "";
+    const version = quality.universeVersion ? esc(quality.universeVersion.length > 16 ? quality.universeVersion.slice(0, 16) + "…" : quality.universeVersion) : "旧版未记录";
+    const stockCount = Number.isInteger(quality.stockCount) ? number(quality.stockCount) + " 只" : "未记录";
+    return '<aside class="history-quality history-quality--' + esc(quality.kind) + '" aria-label="历史快照数据质量"><div class="history-quality__head"><strong>' + esc(quality.label) + '</strong><span>' + esc(quality.snapshotTimingLabel) + '</span></div><dl>' +
+      '<div><dt>数据日期</dt><dd>' + esc(quality.dataDate) + '</dd></div><div><dt>扫描股票</dt><dd>' + stockCount + '</dd></div>' +
+      '<div><dt>行情成功</dt><dd>' + qualityMetric(quality.historySuccessCount, quality.stockCount, quality.historySuccessRate) + '</dd></div>' +
+      '<div><dt>精确收盘</dt><dd>' + qualityMetric(quality.exactCloseCount, quality.stockCount, quality.exactCloseCoverage) + '</dd></div>' +
+      '<div><dt>股票池来源</dt><dd>' + esc(quality.universeSourceLabel) + '</dd></div><div><dt>股票池版本</dt><dd>' + version + '</dd></div>' +
+      '<div><dt>股票池沿用</dt><dd>' + esc(quality.universeReuseLabel) + '</dd></div></dl>' +
+      '<p>' + esc(quality.warning) + '</p><p>盘中或当日尚未收盘时沿用最近完整交易日；信号条数由当天规则命中决定，数量变化本身不代表数据故障。</p></aside>';
+  }
 
   function returnHtml(label, result) {
     const date = result?.tradingDate ? esc(result.tradingDate) : "对应交易日未到";
@@ -427,6 +498,7 @@ const HISTORY_JS = `
     panelsNode.innerHTML = boards.map(panelHtml).join("");
     titleNode.textContent = detail.date + " 榜单";
     sourceNode.textContent = sourceName(detail.source, detail.entry?.bootstrapSeed === true);
+    qualityNode.innerHTML = qualityHtml(detail.dataQuality);
     document.querySelectorAll("[data-history-date]").forEach((button) => {
       if (button.dataset.historyDate === detail.date) button.setAttribute("aria-current", "date");
       else button.removeAttribute("aria-current");

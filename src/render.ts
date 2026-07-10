@@ -1,4 +1,5 @@
 import companyProfilesJson from "../data/company-profiles.json";
+import { getSnapshotDataQuality, type SnapshotDataQuality } from "./data-quality";
 import type { CompanyProfile, SignalBoard, SignalId, SignalRow, SignalSnapshot } from "./types";
 
 interface SignalPresentation {
@@ -52,6 +53,7 @@ const INITIAL_VISIBLE_DIRECTORY_ITEMS = 30;
 const DIRECTORY_REVEAL_STEP = 30;
 
 export function renderHtml(snapshot: SignalSnapshot): string {
+  const quality = getSnapshotDataQuality(snapshot);
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -71,12 +73,15 @@ export function renderHtml(snapshot: SignalSnapshot): string {
       <p class="lead">${escapeHtml(snapshot.philosophy)}</p>
     </div>
     <dl class="market-meta" aria-label="市场数据状态">
-      <div><dt>市场日</dt><dd>${escapeHtml(snapshot.marketDate)}</dd></div>
+      <div><dt>数据日期</dt><dd>${escapeHtml(quality.dataDate)}</dd></div>
       <div><dt>更新时间</dt><dd>${formatDateTime(snapshot.refreshedAt)}</dd></div>
       <div><dt>数据源</dt><dd>${escapeHtml(snapshot.sourceLabel)}</dd></div>
-      <div><dt>数据范围</dt><dd>${escapeHtml(formatDataScope(snapshot))}</dd></div>
+      <div><dt>数据范围</dt><dd>${escapeHtml(formatDataScope(snapshot, quality))}</dd></div>
+      <div><dt>榜单状态</dt><dd>${escapeHtml(quality.snapshotTimingLabel)}</dd></div>
     </dl>
   </header>
+
+  ${renderDataQualityNotice(quality)}
 
   ${renderProfessionalNotes()}
   ${renderCompanyDirectory(snapshot)}
@@ -107,6 +112,22 @@ export function renderHtml(snapshot: SignalSnapshot): string {
   <script>${JS}</script>
 </body>
 </html>`;
+}
+
+function renderDataQualityNotice(quality: SnapshotDataQuality): string {
+  return `<aside class="data-quality data-quality--${quality.kind}" aria-label="数据质量说明">
+    <strong>${escapeHtml(quality.label)}</strong>
+    <dl>
+      <div><dt>扫描股票</dt><dd>${formatStockCount(quality.stockCount)}</dd></div>
+      <div><dt>行情成功</dt><dd>${formatQualityMetric(quality.historySuccessCount, quality.stockCount, quality.historySuccessRate)}</dd></div>
+      <div><dt>精确收盘</dt><dd>${formatQualityMetric(quality.exactCloseCount, quality.stockCount, quality.exactCloseCoverage)}</dd></div>
+      <div><dt>股票池来源</dt><dd>${escapeHtml(quality.universeSourceLabel)}</dd></div>
+      <div><dt>股票池版本</dt><dd>${escapeHtml(formatUniverseVersion(quality.universeVersion))}</dd></div>
+      <div><dt>股票池沿用</dt><dd>${escapeHtml(quality.universeReuseLabel)}</dd></div>
+    </dl>
+    <p>${escapeHtml(quality.warning)}</p>
+    <p>盘中或当日尚未收盘时，页面沿用最近一个完整交易日榜单；请以“数据日期”为准。信号条数由当天规则命中决定，数量变化本身不代表数据故障。</p>
+  </aside>`;
 }
 
 function renderProfessionalNotes(): string {
@@ -476,7 +497,7 @@ function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
-function formatDataScope(snapshot: SignalSnapshot): string {
+function formatDataScope(snapshot: SignalSnapshot, quality: SnapshotDataQuality): string {
   const meta = snapshot.meta;
   if (!meta) {
     return "最近快照";
@@ -493,13 +514,22 @@ function formatDataScope(snapshot: SignalSnapshot): string {
         : "随代码快照";
 
   const modeLabel = meta.buildMode === "production" ? "生产" : meta.buildMode === "staging" ? "调试" : "本地";
-  const coverage = typeof meta.exactCloseCoverage === "number"
-    ? meta.exactCloseCoverage
-    : typeof meta.exactCloseCount === "number" && meta.stockCount > 0
-      ? meta.exactCloseCount / meta.stockCount
-      : null;
+  const coverage = quality.exactCloseCoverage;
   const coverageLabel = coverage === null ? "" : ` · 收盘覆盖 ${formatNumber(coverage * 100)}%`;
   return `${poolLabel} · ${modeLabel}${coverageLabel}`;
+}
+
+function formatQualityMetric(count: number | null, total: number | null, rate: number | null): string {
+  const countLabel = count === null || total === null ? "数量未记录" : `${formatNumber(count)}/${formatNumber(total)} 只`;
+  return rate === null ? countLabel : `${countLabel}（${formatNumber(rate * 100)}%）`;
+}
+
+function formatStockCount(value: number | null): string {
+  return value === null ? "未记录" : `${formatNumber(value)} 只`;
+}
+
+function formatUniverseVersion(value: string | null): string {
+  return value === null ? "旧版未记录" : value.length > 16 ? `${value.slice(0, 16)}…` : value;
 }
 
 function returnClass(value: number): string {
@@ -816,6 +846,58 @@ body::before {
   margin: 0;
   font-weight: 900;
   overflow-wrap: anywhere;
+}
+
+.data-quality {
+  display: grid;
+  gap: 5px;
+  padding: 13px clamp(14px, 4vw, 64px);
+  border-bottom: 1px solid var(--line);
+  background: rgba(232, 237, 244, 0.72);
+}
+
+.data-quality strong {
+  color: var(--indigo);
+}
+
+.data-quality dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 3px 0;
+}
+
+.data-quality dt {
+  color: var(--muted);
+  font-size: 0.73rem;
+  font-weight: 900;
+}
+
+.data-quality dd {
+  margin: 3px 0 0;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.data-quality p {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.data-quality--bootstrap-seed {
+  background: var(--cinnabar-soft);
+  border-bottom-color: rgba(164, 71, 53, 0.36);
+}
+
+.data-quality--bootstrap-seed strong,
+.data-quality--partial-or-preview strong {
+  color: var(--cinnabar);
+}
+
+.data-quality--complete-production {
+  background: var(--jade-soft);
 }
 
 .professional-notes {
@@ -1386,6 +1468,10 @@ meter::-webkit-meter-optimum-value {
   .signal-list {
     grid-template-columns: 1fr;
   }
+
+  .data-quality dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 520px) {
@@ -1426,6 +1512,10 @@ meter::-webkit-meter-optimum-value {
   .metric-pair {
     grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
     gap: 8px;
+  }
+
+  .data-quality dl {
+    grid-template-columns: 1fr;
   }
 }
 `;

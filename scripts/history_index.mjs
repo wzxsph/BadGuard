@@ -63,7 +63,12 @@ export function assertStableStockCount(previousSnapshot, nextSnapshot, maximumSh
   return { checked: true, shrinkRate };
 }
 
-export function assertSnapshotCompleteness(snapshot, closeTable, minimumCoverage = 0.90) {
+export function assertSnapshotCompleteness(
+  snapshot,
+  closeTable,
+  minimumHistoryCoverage = 0.98,
+  minimumCloseCoverage = 0.90
+) {
   const meta = snapshot?.meta;
   const stockCount = meta?.stockCount;
   const historySuccessCount = meta?.historySuccessCount;
@@ -71,6 +76,10 @@ export function assertSnapshotCompleteness(snapshot, closeTable, minimumCoverage
   const closeCount = closeTable?.closes && typeof closeTable.closes === "object" && !Array.isArray(closeTable.closes)
     ? Object.keys(closeTable.closes).length
     : -1;
+  const missingCodes = closeTable?.missingCodes;
+  const providerMissingCodes = closeTable?.providerMissingCodes;
+  const notListedCodes = closeTable?.notListedCodes;
+  const suspendedCodes = closeTable?.suspendedCodes;
   if (
     !Number.isInteger(stockCount) || stockCount <= 0 ||
     !Number.isInteger(historySuccessCount) || historySuccessCount < 0 || historySuccessCount > stockCount ||
@@ -83,15 +92,41 @@ export function assertSnapshotCompleteness(snapshot, closeTable, minimumCoverage
     throw new Error("Production snapshots must retain all board rows (perBoardLimit=0).");
   }
 
+  for (const [label, values] of Object.entries({
+    missingCodes,
+    providerMissingCodes,
+    notListedCodes,
+    suspendedCodes
+  })) {
+    if (!Array.isArray(values) || values.some((code) => !/^\d{6}$/.test(String(code))) || new Set(values).size !== values.length) {
+      throw new Error(`Close-table ${label} must be a unique six-digit code list.`);
+    }
+  }
+  const classifiedMissing = [...providerMissingCodes, ...notListedCodes, ...suspendedCodes];
+  if (
+    new Set(classifiedMissing).size !== classifiedMissing.length ||
+    JSON.stringify([...missingCodes].sort()) !== JSON.stringify([...classifiedMissing].sort()) ||
+    Object.keys(closeTable.closes).some((code) => missingCodes.includes(code)) ||
+    closeCount + missingCodes.length !== stockCount ||
+    providerMissingCodes.length !== meta.failureCount ||
+    providerMissingCodes.length !== meta.providerMissingCount ||
+    notListedCodes.length !== meta.notListedCount ||
+    suspendedCodes.length !== meta.suspendedCount
+  ) {
+    throw new Error("Exact-close missing codes are not partitioned into provider-missing, not-listed, and suspended sets.");
+  }
+
   const historyRate = historySuccessCount / stockCount;
   const closeRate = closeCount / stockCount;
   if (
-    historyRate + Number.EPSILON < minimumCoverage ||
-    closeRate + Number.EPSILON < minimumCoverage ||
+    historyRate + Number.EPSILON < minimumHistoryCoverage ||
+    closeRate + Number.EPSILON < minimumCloseCoverage ||
     !approximatelyEqual(meta.historySuccessRate, historyRate) ||
     !approximatelyEqual(meta.exactCloseCoverage, closeRate)
   ) {
-    throw new Error(`History and exact-close coverage must both be at least ${(minimumCoverage * 100).toFixed(0)}%.`);
+    throw new Error(
+      `History coverage must be at least ${(minimumHistoryCoverage * 100).toFixed(0)}% and exact-close coverage at least ${(minimumCloseCoverage * 100).toFixed(0)}%.`
+    );
   }
   return { stockCount, historySuccessCount, exactCloseCount, historyRate, closeRate };
 }

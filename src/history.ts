@@ -5,6 +5,7 @@ export const HISTORY_INDEX_KEY = "signal-history-index";
 export const HISTORY_SNAPSHOT_PREFIX = "history-snapshot:";
 export const MARKET_CLOSE_PREFIX = "market-close:";
 export const MARKET_TRADING_CALENDAR_KEY = "market-trading-calendar";
+export const UNIVERSE_MANIFEST_PREFIX = "signal-universe-manifest:v:";
 export const HISTORY_INDEX_VERSION = 1 as const;
 
 export type HistorySource = "live" | "backfill";
@@ -22,6 +23,9 @@ export interface HistoryIndexEntry {
   closeKey?: string;
   /** Opaque, key-safe publication revision for observability. */
   revision?: string;
+  /** Accepted sticky-universe version used to generate this history entry. */
+  universeManifestKey?: string;
+  universeManifestRevision?: string;
 }
 
 /**
@@ -574,7 +578,9 @@ function parseHistoryEntry(raw: unknown): HistoryIndexEntry {
     (raw.publishedAt !== undefined && typeof raw.publishedAt !== "string") ||
     (raw.snapshotKey !== undefined && typeof raw.snapshotKey !== "string") ||
     (raw.closeKey !== undefined && typeof raw.closeKey !== "string") ||
-    (raw.revision !== undefined && typeof raw.revision !== "string")
+    (raw.revision !== undefined && typeof raw.revision !== "string") ||
+    (raw.universeManifestKey !== undefined && typeof raw.universeManifestKey !== "string") ||
+    (raw.universeManifestRevision !== undefined && typeof raw.universeManifestRevision !== "string")
   ) {
     throw contractError("Malformed history index entry");
   }
@@ -598,6 +604,12 @@ function parseHistoryEntry(raw: unknown): HistoryIndexEntry {
   }
   if (typeof raw.revision === "string") {
     entry.revision = raw.revision;
+  }
+  if (typeof raw.universeManifestKey === "string") {
+    entry.universeManifestKey = raw.universeManifestKey;
+  }
+  if (typeof raw.universeManifestRevision === "string") {
+    entry.universeManifestRevision = raw.universeManifestRevision;
   }
 
   validateHistoryEntry(entry);
@@ -643,7 +655,10 @@ function validateHistoryEntry(entry: HistoryIndexEntry): void {
     (entry.publishedAt !== undefined && typeof entry.publishedAt !== "string") ||
     (entry.snapshotKey !== undefined && !isSafePayloadKey(entry.snapshotKey, HISTORY_SNAPSHOT_PREFIX, entry.date)) ||
     (entry.closeKey !== undefined && !isSafePayloadKey(entry.closeKey, MARKET_CLOSE_PREFIX, entry.date)) ||
-    (entry.revision !== undefined && !isSafeRevision(entry.revision))
+    (entry.revision !== undefined && !isSafeRevision(entry.revision)) ||
+    (entry.universeManifestRevision !== undefined && !isSafeRevision(entry.universeManifestRevision)) ||
+    (entry.universeManifestKey !== undefined && entry.universeManifestKey !== `${UNIVERSE_MANIFEST_PREFIX}${entry.universeManifestRevision}`) ||
+    ((entry.universeManifestKey === undefined) !== (entry.universeManifestRevision === undefined))
   ) {
     throw contractError(`Invalid history index entry for ${String(entry.date)}`);
   }

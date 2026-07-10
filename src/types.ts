@@ -66,6 +66,8 @@ export interface SignalRow {
   change20d: number;
   riskTags: string[];
   signalStrength: number;
+  /** Sticky-universe membership at generation time. */
+  universeStatus?: "active" | "stale" | "required-only";
 }
 
 export interface CompanyProfile {
@@ -128,16 +130,32 @@ export interface SnapshotMeta {
   historySource: "sina" | "eastmoney" | "provider" | "bundled";
   failureCount: number;
   buildMode: "production" | "staging" | "local" | "bundled";
+  universeManifestRevision?: string;
+  universeManifestMemberCount?: number;
+  universeStaleCount?: number;
   historySuccessCount?: number;
   historySuccessRate?: number;
   exactCloseCount?: number;
   exactCloseCoverage?: number;
+  providerMissingCount?: number;
+  notListedCount?: number;
+  suspendedCount?: number;
   perBoardLimit?: number;
   shardCount?: number;
   historyCacheHitCount?: number;
+  historyCacheFullHitCount?: number;
+  historyCacheIncrementalHitCount?: number;
+  historyCacheRefreshCount?: number;
+  historyRetryRounds?: number;
   runContextHash?: string;
+  universeVersion?: string;
   snapshotSource?: "live" | "backfill";
   requiredHistoryCodeCount?: number;
+  bootstrapSeed?: boolean;
+  bootstrapSeedSource?: string;
+  bootstrapCloseCoverage?: "ranked-codes-only";
+  bootstrapRankedRowCount?: number;
+  bootstrapPublishedCloseCount?: number;
 }
 
 export interface SignalSnapshot {

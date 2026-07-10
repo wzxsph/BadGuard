@@ -36,6 +36,13 @@ describe("history page rendering", () => {
     expect(html).toContain("风险过滤");
     expect(html).toContain("流通市值");
     expect(html).toContain("换手率");
+    expect(html).toContain("扫描股票");
+    expect(html).toContain("行情成功");
+    expect(html).toContain("精确收盘");
+    expect(html).toContain("股票池来源");
+    expect(html).toContain("股票池版本");
+    expect(html).toContain("股票池沿用");
+    expect(html).toContain("数量变化本身不代表数据故障");
     expect(html).toContain("+2.5%");
     expect(html).toContain("-1.25%");
     expect(html).toContain("待收盘");
@@ -61,12 +68,14 @@ describe("history page rendering", () => {
   });
 
   it("labels a temporary repository seed distinctly from a live retention", () => {
-    const detail = makeDetail([], true);
+    const detail = makeDetail([makeRow("000001", { t1: pending(), t2: pending() })], true);
     const html = renderHistoryHtml([
       { date: "2026-07-09", source: "live", status: "ready", bootstrapSeed: true }
     ], detail);
 
-    expect(html).toContain("仓库恢复");
+    expect(html).toContain("临时恢复种子");
+    expect(html).toContain("1/3 只");
+    expect(html).toContain("价格表只保留榜内代码");
   });
 });
 
@@ -112,7 +121,20 @@ describe("history worker routes", () => {
     expect(pageResponse.status).toBe(200);
     const html = await pageResponse.text();
     expect(html).toContain("2026-07-09 榜单");
-    expect(html).toContain("仓库恢复");
+    expect(html).toContain("临时恢复种子");
+
+    const detailResponse = await worker.fetch(
+      new Request("https://example.test/api/history/2026-07-09"),
+      env
+    );
+    expect(await detailResponse.json()).toMatchObject({
+      date: "2026-07-09",
+      dataQuality: {
+        kind: "bootstrap-seed",
+        stockCount: 3,
+        universeSource: "provider"
+      }
+    });
   });
 
   it("returns distinct 404 and 503 errors without reading latest-signal-snapshot", async () => {
@@ -148,6 +170,11 @@ describe("history worker routes", () => {
 
 function makeDetail(rows: SignalRow[], bootstrapSeed = false): HistoryDetail {
   const snapshot = makeSnapshot(rows);
+  if (bootstrapSeed) {
+    snapshot.meta.bootstrapSeed = true;
+    snapshot.meta.bootstrapCloseCoverage = "ranked-codes-only";
+    snapshot.meta.bootstrapPublishedCloseCount = new Set(rows.map((row) => row.code)).size;
+  }
   const enrich = (row: SignalRow) => ({
     ...row,
     forwardReturns: (row as SignalRow & { forwardReturns: unknown }).forwardReturns
@@ -177,7 +204,13 @@ function makeSnapshot(rows: SignalRow[]): SignalSnapshot {
       universeSource: "provider",
       historySource: "provider",
       failureCount: 0,
-      buildMode: "local"
+      buildMode: "local",
+      historySuccessCount: 3,
+      historySuccessRate: 1,
+      exactCloseCount: 3,
+      exactCloseCoverage: 1,
+      perBoardLimit: 0,
+      runContextHash: "0123456789abcdef0123456789abcdef"
     },
     boards: boardIds.map((id) => ({
       id,
