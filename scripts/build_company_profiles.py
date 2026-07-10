@@ -75,7 +75,11 @@ def main() -> None:
     args = parse_args()
     snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
     existing = load_existing(Path(args.output))
-    rows = merge_existing_profile_rows(unique_signal_rows(snapshot), existing)
+    source_rows = unique_signal_rows(snapshot)
+    if args.all_stocks:
+        source_rows = load_all_stock_rows(args)
+
+    rows = merge_existing_profile_rows(source_rows, existing)
     if args.limit > 0:
         rows = rows[: args.limit]
 
@@ -96,20 +100,25 @@ def main() -> None:
         profile = {**make_base_profile(row, updated_at), **profiles.get(code, {})}
 
         if ak is not None:
-            fetched_profile = fetch_cninfo_profile(
-                ak,
-                code,
-                max_attempts=args.fetch_retries,
-                initial_delay=args.fetch_retry_initial_delay,
-                backoff=args.fetch_retry_backoff
-            )
-            business_segments = fetch_business_segments(
-                ak,
-                code,
-                max_attempts=args.fetch_retries,
-                initial_delay=args.fetch_retry_initial_delay,
-                backoff=args.fetch_retry_backoff
-            )
+            existing_profile = profiles.get(code, {})
+            if should_reuse_profile(existing_profile, args.refresh_existing):
+                fetched_profile = {}
+                business_segments = []
+            else:
+                fetched_profile = fetch_cninfo_profile(
+                    ak,
+                    code,
+                    max_attempts=args.fetch_retries,
+                    initial_delay=args.fetch_retry_initial_delay,
+                    backoff=args.fetch_retry_backoff
+                )
+                business_segments = fetch_business_segments(
+                    ak,
+                    code,
+                    max_attempts=args.fetch_retries,
+                    initial_delay=args.fetch_retry_initial_delay,
+                    backoff=args.fetch_retry_backoff
+                )
 
             if fetched_profile:
                 profile.update(fetched_profile)
@@ -139,12 +148,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--snapshot", default="data/latest.json", help="Signal snapshot JSON path.")
     parser.add_argument("--output", default="data/company-profiles.json", help="Company profile database JSON path.")
     parser.add_argument("--fetch-akshare", action="store_true", help="Fetch F10-like fields with AkShare.")
+    parser.add_argument("--all-stocks", action="store_true", help="Collect profiles for current full A-share universe instead of only snapshot stocks.")
+    parser.add_argument("--universe-source", default="code-list", choices=["code-list", "realtime"], help="Universe source for --all-stocks.")
+    parser.add_argument("--include-st", action="store_true", help="When collecting all stocks, include ST names.")
+    parser.add_argument("--universe-limit", type=int, default=0, help="Optional cap for all-stock universe collection; 0 means no cap.")
     parser.add_argument("--limit", type=int, default=0, help="Limit profiles for a quick smoke test; 0 means all signal stocks.")
     parser.add_argument("--sleep", type=float, default=0.15, help="Seconds to sleep between AkShare profile requests.")
     parser.add_argument("--fetch-retries", type=int, default=3, help="Attempts per AkShare profile endpoint.")
     parser.add_argument("--fetch-retry-initial-delay", type=float, default=0.5, help="Initial delay before the first retry.")
     parser.add_argument("--fetch-retry-backoff", type=float, default=1.8, help="Delay multiplier for retry backoff.")
+    parser.add_argument("--refresh-existing", action="store_true", help="Refetch profiles even if profileSource is akshare-f10.")
+    parser.add_argument("--required-codes", help="History-code requirement file for all-stock universe collection.")
     return parser.parse_args()
+
+
+def should_reuse_profile(profile: dict[str, Any], force_refresh: bool) -> bool:
+    if force_refresh:
+        return False
+    if not profile:
+        return False
+    if profile.get("profileSource") != "akshare-f10":
+        return False
+    # Treat any non-placeholder akshare-f10 profile as reusable.
+    return bool(profile.get("updatedAt"))
 
 
 def load_existing(path: Path) -> dict[str, dict[str, Any]]:
@@ -188,6 +214,39 @@ def merge_existing_profile_rows(rows: list[dict[str, Any]], existing: dict[str, 
         seen.add(normalized_code)
 
     return merged
+
+
+def load_all_stock_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
+    if not args.fetch_akshare:
+        raise SystemExit("--all-stocks requires --fetch-akshare to download F10 data for the universe.")
+
+    try:
+        from scripts.build_akshare_snapshot import load_required_codes
+    except ModuleNotFoundError:
+        from build_akshare_snapshot import load_required_codes  # type: ignore[no-redef]
+
+    required_codes = load_required_codes(args.required_codes) if args.required_codes else set()
+    stock_rows = fetch_universe_stock_rows(args.universe_source, args.universe_limit, args.include_st, required_codes)
+    return stock_rows
+
+
+def fetch_universe_stock_rows(
+    universe_source: str,
+    limit: int,
+    include_st: bool,
+    required_codes: set[str],
+) -> list[dict[str, Any]]:
+    try:
+        from scripts.build_akshare_snapshot import load_stock_universe
+    except ModuleNotFoundError:
+        from build_akshare_snapshot import load_stock_universe  # type: ignore[no-redef]
+
+    stocks, _ = load_stock_universe(limit, include_st, universe_source, required_codes)
+
+    return [
+        {"code": stock.code, "name": stock.name, "industry": "未分类"}
+        for stock in stocks
+    ]
 
 
 def make_base_profile(row: dict[str, Any], updated_at: str) -> dict[str, Any]:

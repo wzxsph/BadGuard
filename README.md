@@ -149,6 +149,12 @@ uv sync
 npm run akshare:profiles
 ```
 
+要一次性把全市场 F10 补齐，建议先跑：
+
+```bash
+npm run akshare:profiles:all
+```
+
 需要更强鲁棒性的补齐可以加上重试参数（对接口抖动/限流更好）：
 
 ```bash
@@ -156,11 +162,15 @@ uv run python scripts/build_company_profiles.py \
   --snapshot data/latest.json \
   --output data/company-profiles.json \
   --fetch-akshare \
+  --all-stocks \
+  --universe-source code-list \
   --fetch-retries 4 \
   --fetch-retry-initial-delay 0.8 \
   --fetch-retry-backoff 1.7 \
   --sleep 0.2
 ```
+
+默认模式下，脚本会复用已有的 `akshare-f10` 结果（按已有记录的 `updatedAt` 跳过重复抓取），减少重复请求；如果你要整库重刷，补齐缺失字段，可以加 `--refresh-existing`。
 
 这会调用 AkShare 的公司概况和主营构成接口，补全主营业务、经营范围、机构简介、上市日期、办公地址、官网和主营收入占比等静态字段。脚本不会编造缺失字段；F10 数据仍建议人工抽查，毕竟连散户都知道，资料库偶尔也会犯困。
 
