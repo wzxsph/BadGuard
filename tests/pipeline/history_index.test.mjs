@@ -1,6 +1,8 @@
 import { expect, test } from "vitest";
 
 import {
+  assertSnapshotCompleteness,
+  assertStableStockCount,
   isImmutablePayloadPointer,
   mergeHistoryIndex,
   selectLatestLiveArtifact,
@@ -82,4 +84,56 @@ test("skipped-date repair only trusts immutable date-scoped pointers", () => {
     "history-snapshot:",
     "2026-07-08"
   )).toBe(false);
+});
+
+test("full production code-list snapshots reject stock-count shrink above five percent", () => {
+  const snapshot = (stockCount, overrides = {}) => ({
+    meta: {
+      buildMode: "production",
+      universeSource: "code-list",
+      scanLimit: 0,
+      stockCount,
+      ...overrides
+    }
+  });
+
+  expect(assertStableStockCount(snapshot(1000), snapshot(950))).toEqual({ checked: true, shrinkRate: 0.05 });
+  expect(() => assertStableStockCount(snapshot(1000), snapshot(949))).toThrow(/exceeding 5%/);
+  expect(assertStableStockCount(snapshot(1000), snapshot(500, { buildMode: "staging" }))).toEqual({
+    checked: false,
+    shrinkRate: null
+  });
+  expect(assertStableStockCount(snapshot(1000), snapshot(500, { universeSource: "realtime" }))).toEqual({
+    checked: false,
+    shrinkRate: null
+  });
+});
+
+test("snapshot and close-table completeness requires matching counts at ninety percent", () => {
+  const snapshot = {
+    meta: {
+      stockCount: 100,
+      historySuccessCount: 90,
+      historySuccessRate: 0.9,
+      failureCount: 10,
+      exactCloseCount: 90,
+      exactCloseCoverage: 0.9
+    }
+  };
+  const close = { closes: Object.fromEntries(Array.from({ length: 90 }, (_, index) => [String(index).padStart(6, "0"), 10])) };
+
+  expect(assertSnapshotCompleteness(snapshot, close)).toMatchObject({
+    stockCount: 100,
+    historySuccessCount: 90,
+    exactCloseCount: 90
+  });
+  expect(() => assertSnapshotCompleteness(
+    { ...snapshot, meta: { ...snapshot.meta, historySuccessCount: 89, historySuccessRate: 0.89, failureCount: 11 } },
+    close
+  )).toThrow(/at least 90%/);
+  expect(() => assertSnapshotCompleteness(snapshot, { closes: { ...close.closes, "999999": 10 } })).toThrow(/counts do not match/);
+  expect(() => assertSnapshotCompleteness(
+    { ...snapshot, meta: { ...snapshot.meta, buildMode: "production", perBoardLimit: 80 } },
+    close
+  )).toThrow(/retain all board rows/);
 });

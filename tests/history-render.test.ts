@@ -41,6 +41,8 @@ describe("history page rendering", () => {
     expect(html).toContain("待收盘");
     expect(html).toContain("暂无数据");
     expect(html).toContain("后续涨跌仅用于复盘，不代表策略胜率或交易建议");
+    expect(html).toContain('href="https://github.com/wzxsph/BadGuard"');
+    expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toContain("@media (max-width: 760px)");
     expect(html.indexOf('data-history-date="2026-07-09"')).toBeLessThan(
       html.indexOf('data-history-date="2026-07-08"')

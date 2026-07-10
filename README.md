@@ -121,10 +121,12 @@ KDJ / MACD / RSI 的具体数值默认收起来，点“展开详情”再看。
 生产数据流：
 
 1. GitHub Actions 在北京时间交易日 15:30 运行 AkShare 脚本。
-2. 默认扫描成交额靠前的 1000 只活跃 A 股，并额外带上最近两期历史榜单涉及的股票，避免股票跌出前 1000 后拿不到复盘收盘价。
+2. 生产刷新固定使用完整、稳定的 A 股代码表（`code-list`、`limit=0`），不会因当日成交额排名滚动改变样本池；手工 staging 才会按 `scan_limit` 做小样本验证。最近两期历史榜单代码仍会显式并入取数任务，保证退榜后续收益所需收盘价被请求。
 3. 东财日线用成交量、换手率和收盘价推导历史流通市值；新浪日线优先使用流通股本。脚本同时生成信号快照、当日收盘价表和交易所交易日历。收盘价表还保存前两交易日在同一前复权基准下的重定基收盘价，避免除权除息让跨日独立抓取出现假涨跌。
-4. Actions 先写不可变版本的历史快照和收盘价表，再以 `signal-history-index` 切换可见版本；提交后再修复 `history-snapshot:YYYY-MM-DD`、`market-close:YYYY-MM-DD`、`signal-snapshot:YYYY-MM-DD` 和 `latest-signal-snapshot` 等兼容别名。即使别名写入失败，页面仍通过索引指针读取完整版本。
-5. Worker 优先按历史索引指针渲染已提交的今日页面，并兼容更晚的旧版 `latest-signal-snapshot`；没有 KV 时读取随代码部署的最近快照。历史接口使用严格 KV 读取，KV 故障时明确报错，不会降级成最新榜单。
+4. 四个榜单默认完整保存，不设置静默的单榜截断。生成和发布都会要求成功历史取数、目标日精确收盘价覆盖率分别达到 90%；完整生产代码表的相邻快照若非强制发布且股票数缩减超过 5%，会拒绝上线。
+5. KV 发布前，Actions 会把已验证的 manifest、日期快照、收盘价表和交易日历保存为 GitHub Actions artifact，保留 90 天，便于审计和恢复。
+6. Actions 先写不可变版本的历史快照和收盘价表，再以 `signal-history-index` 切换可见版本；提交后再修复 `history-snapshot:YYYY-MM-DD`、`market-close:YYYY-MM-DD`、`signal-snapshot:YYYY-MM-DD` 和 `latest-signal-snapshot` 等兼容别名。即使别名写入失败，页面仍通过索引指针读取完整版本。
+7. Worker 优先按历史索引指针渲染已提交的今日页面，并兼容更晚的旧版 `latest-signal-snapshot`；没有 KV 时读取随代码部署的最近快照。历史接口使用严格 KV 读取，KV 故障时明确报错，不会降级成最新榜单。
 
 同一个市场日的生产快照默认不覆盖，避免同一天数据因为调试参数变化而来回跳。手动触发 `Refresh AkShare Signals` 默认只写 `staging-signal-snapshot`，可以调整 `scan_limit` 做验证；只有显式设置 `publish_production=true`，并在需要重发同日数据时设置 `force_publish=true`，才会同步更新该日历史记录。索引按日期去重，强制重发通过不可变版本 key 加索引指针切换，避免读到半新半旧的数据。
 

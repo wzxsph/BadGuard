@@ -128,6 +128,13 @@ export interface SnapshotMeta {
   historySource: "sina" | "eastmoney" | "provider" | "bundled";
   failureCount: number;
   buildMode: "production" | "staging" | "local" | "bundled";
+  historySuccessCount?: number;
+  historySuccessRate?: number;
+  exactCloseCount?: number;
+  exactCloseCoverage?: number;
+  perBoardLimit?: number;
+  snapshotSource?: "live" | "backfill";
+  requiredHistoryCodeCount?: number;
 }
 
 export interface SignalSnapshot {

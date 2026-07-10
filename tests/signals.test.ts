@@ -56,6 +56,7 @@ describe("daily technical signal board", () => {
     });
 
     expect(renderHtml(snapshot)).toContain("数据范围");
+    expect(renderHtml(snapshot)).toContain("收盘覆盖");
   });
 
   it("renders the paper-note tone with a separate professional annotation area", () => {
@@ -66,6 +67,8 @@ describe("daily technical signal board", () => {
     expect(html).toContain("今天又来抄底啦");
     expect(html).toContain("仅用于个人学习");
     expect(html).not.toContain("每日技术信号榜");
+    expect(html).toContain('href="https://github.com/wzxsph/BadGuard"');
+    expect(html).toContain('rel="noopener noreferrer"');
   });
 
   it("renders a one-time entry notice with disclaimer and term notes", () => {
@@ -185,6 +188,40 @@ describe("daily technical signal board", () => {
     });
 
     expect(result.marketDate).toBe("2026-07-09");
+  });
+
+  it("keeps the latest closed board visible before today's market close", async () => {
+    const result = await getSnapshot({}, new Date("2026-07-10T02:00:00.000Z"));
+
+    expect(result.marketDate).toBe("2026-07-09");
+    expect(result.topRows.length).toBeGreaterThan(0);
+    expect(result.boards.some((board) => board.rows.length > 0)).toBe(true);
+  });
+
+  it("uses the validated GitHub snapshot when same-day Cloudflare data has a legacy schema", async () => {
+    const legacy = structuredClone(snapshot) as unknown as Record<string, unknown>;
+    const boards = legacy.boards as Array<{ rows: Array<Record<string, unknown>> }>;
+    for (const board of boards) {
+      for (const row of board.rows) {
+        delete row.triggerClose;
+        delete row.turnoverRate;
+        delete row.floatMarketCap;
+        delete row.liquidityEligible;
+        delete row.liquidityTags;
+      }
+    }
+    const values = new Map<string, unknown>([[LATEST_SIGNAL_SNAPSHOT_KEY, legacy]]);
+
+    const result = await getSnapshot({
+      SIGNAL_KV: {
+        get: async (key: string) => values.get(key) ?? null
+      } as unknown as KVNamespace
+    });
+
+    expect(result.marketDate).toBe(snapshot.marketDate);
+    expect(result.meta.buildMode).toBe("bundled");
+    expect(result.topRows.length).toBeGreaterThan(0);
+    expect(result.topRows.every((row) => row.liquidityEligible)).toBe(true);
   });
 
   it("uses the history index as the publication pointer without regressing a newer legacy latest", async () => {

@@ -17,7 +17,14 @@ export const DATED_SIGNAL_SNAPSHOT_PREFIX = "signal-snapshot:";
 export async function getSnapshot(env: Env, now = new Date()): Promise<SignalSnapshot> {
   const cached = await readPublishedSnapshot(env);
   if (cached) {
-    return enforceSnapshotLiquidity(cached);
+    const normalized = enforceSnapshotLiquidity(cached);
+    if (hasLegacyObservationRows(cached)) {
+      const bundled = getBundledSnapshot();
+      if (bundled.marketDate >= cached.marketDate) {
+        return bundled;
+      }
+    }
+    return normalized;
   }
 
   if (env.DATA_PROVIDER_URL) {
@@ -129,6 +136,16 @@ function isSnapshotForDate(value: SignalSnapshot | null, date: string): value is
 function isSafeIndexedSnapshotKey(key: string, date: string): boolean {
   return key === `history-snapshot:${date}` ||
     new RegExp(`^history-snapshot:${date}:v:[0-9a-f]{16}$`).test(key);
+}
+
+function hasLegacyObservationRows(snapshot: SignalSnapshot): boolean {
+  return snapshot.boards.some((board) => board.id !== "risk-filter" && board.rows.some((row) => (
+    typeof row.triggerClose !== "number" ||
+    typeof row.liquidityEligible !== "boolean" ||
+    !Array.isArray(row.liquidityTags) ||
+    !("turnoverRate" in row) ||
+    !("floatMarketCap" in row)
+  )));
 }
 
 async function fetchProviderStocks(env: Env): Promise<StockSeries[]> {

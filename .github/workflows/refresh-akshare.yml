@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       scan_limit:
-        description: Number of active A-share stocks to scan; use 0 for all.
+        description: Staging scan size; production always uses the full stable code-list universe.
         required: true
         default: "1000"
       publish_production:
@@ -98,6 +98,10 @@ jobs:
           UNIVERSE_SOURCE=realtime
           SNAPSHOT_SOURCE=live
           EXTRA_ARGS=()
+          if [ "$PUBLISH_PRODUCTION" = "true" ]; then
+            UNIVERSE_SOURCE=code-list
+            SCAN_LIMIT=0
+          fi
           if [ -n "$BACKFILL_START" ]; then
             UNIVERSE_SOURCE=code-list
             SNAPSHOT_SOURCE=backfill
@@ -158,6 +162,18 @@ jobs:
             source: manifest.source
           }, null, 2));
           JS
+
+      - name: Archive validated history artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: badguard-history-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            data/publish/manifest.json
+            data/publish/history-snapshot-*.json
+            data/publish/market-close-*.json
+            data/trading-calendar.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Upload snapshot to Workers KV
         env:

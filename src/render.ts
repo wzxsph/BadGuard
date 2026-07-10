@@ -101,6 +101,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
     <div class="footer__paper">
       <strong>冷静免责声明</strong>
       ${snapshot.disclaimers.map((item) => `<p>${escapeHtml(item)}</p>`).join("")}
+      <a class="repo-link" href="https://github.com/wzxsph/BadGuard" target="_blank" rel="noopener noreferrer">在 GitHub 查看源码</a>
     </div>
   </footer>
   <script>${JS}</script>
@@ -492,7 +493,13 @@ function formatDataScope(snapshot: SignalSnapshot): string {
         : "随代码快照";
 
   const modeLabel = meta.buildMode === "production" ? "生产" : meta.buildMode === "staging" ? "调试" : "本地";
-  return `${poolLabel} · ${modeLabel}`;
+  const coverage = typeof meta.exactCloseCoverage === "number"
+    ? meta.exactCloseCoverage
+    : typeof meta.exactCloseCount === "number" && meta.stockCount > 0
+      ? meta.exactCloseCount / meta.stockCount
+      : null;
+  const coverageLabel = coverage === null ? "" : ` · 收盘覆盖 ${formatNumber(coverage * 100)}%`;
+  return `${poolLabel} · ${modeLabel}${coverageLabel}`;
 }
 
 function returnClass(value: number): string {
@@ -1342,6 +1349,16 @@ meter::-webkit-meter-optimum-value {
 
 .footer p {
   margin: 5px 0;
+}
+
+.repo-link {
+  display: inline-flex;
+  margin-top: 7px;
+  color: var(--indigo);
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-underline-offset: 3px;
 }
 
 @media (max-width: 900px) {

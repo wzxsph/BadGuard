@@ -33,6 +33,9 @@ HISTORY_START_DATE = "2026-07-08"
 MIN_FLOAT_MARKET_CAP = 5_000_000_000
 MIN_DAILY_AMOUNT = 200_000_000
 HIGH_TURNOVER_RATE = 20.0
+MIN_DATA_COVERAGE = 0.90
+DEFAULT_PER_BOARD = 0
+MAX_INDUSTRY_WORKERS = 8
 EASTMONEY_CLIST_URL = "https://82.push2.eastmoney.com/api/qt/clist/get"
 EASTMONEY_A_SHARE_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
 EASTMONEY_USER_AGENT = (
@@ -110,12 +113,26 @@ def main() -> None:
         datetime.strptime(min(targets), "%Y-%m-%d") - timedelta(days=args.lookback_days)
     ).strftime("%Y%m%d")
     required_codes = load_required_codes(args.required_codes)
+    validate_production_universe(
+        args.build_mode,
+        args.universe_source,
+        args.universe_source,
+        args.limit,
+        args.per_board,
+    )
 
     stocks, actual_universe_source = load_stock_universe(
         args.limit,
         args.include_st,
         args.universe_source,
         required_codes,
+    )
+    validate_production_universe(
+        args.build_mode,
+        args.universe_source,
+        actual_universe_source,
+        args.limit,
+        args.per_board,
     )
     print(
         f"Loaded {len(stocks)} stocks ({len(required_codes)} required history codes); "
@@ -144,13 +161,18 @@ def main() -> None:
             if index % 100 == 0:
                 print(f"Fetched {index}/{len(stocks)} stocks; histories={len(histories)}; failures={len(failures)}")
 
-    if stocks and len(failures) == len(stocks):
-        raise SystemExit(f"All {len(stocks)} stock history requests failed; snapshot was not written.")
+    history_success_count = len(histories)
+    history_success_rate = require_minimum_coverage(
+        "successful history fetches",
+        history_success_count,
+        len(stocks),
+    )
 
     rows_by_date: dict[str, list[dict[str, Any]]] = {}
     closes_by_date: dict[str, dict[str, float]] = {}
     baseline_closes_by_date: dict[str, dict[str, dict[str, float]]] = {}
     missing_closes_by_date: dict[str, list[str]] = {}
+    close_coverage_by_date: dict[str, float] = {}
     all_rows: list[dict[str, Any]] = []
 
     for target in targets:
@@ -167,17 +189,22 @@ def main() -> None:
             else:
                 target_closes[history.stock.code] = close_value
 
-        if not target_closes:
-            raise SystemExit(f"No exact-date closes were fetched for trading date {target}; refusing to publish.")
+        exact_close_coverage = require_minimum_coverage(
+            f"exact-date closes for {target}",
+            len(target_closes),
+            len(stocks),
+        )
 
         rows_by_date[target] = target_rows
         closes_by_date[target] = target_closes
         baseline_closes_by_date[target] = target_baselines
         missing_closes_by_date[target] = sorted(missing_codes)
+        # Persist the checked ratio so the publisher can independently validate the bundle.
+        close_coverage_by_date[target] = exact_close_coverage
         all_rows.extend(target_rows)
 
     if all_rows and not args.skip_industry_map:
-        enrich_row_industries(all_rows, end_date)
+        enrich_row_industries(all_rows, end_date, args.max_workers)
 
     source_label = "AkShare 日线（新浪优先，东财备用）" if args.history_source == "sina" else "AkShare 日线（东财优先，新浪备用）"
     common_meta = {
@@ -186,8 +213,11 @@ def main() -> None:
         "universeSource": actual_universe_source,
         "historySource": args.history_source,
         "historyProviderCounts": dict(sorted(provider_counts.items())),
+        "historySuccessCount": history_success_count,
+        "historySuccessRate": history_success_rate,
         "failureCount": len(failures),
         "buildMode": args.build_mode,
+        "perBoardLimit": args.per_board,
         "requiredHistoryCodeCount": len(required_codes),
     }
 
@@ -207,6 +237,7 @@ def main() -> None:
                 **common_meta,
                 "snapshotSource": artifact_source,
                 "exactCloseCount": len(closes_by_date[target]),
+                "exactCloseCoverage": close_coverage_by_date[target],
             },
             target,
         )
@@ -280,7 +311,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-live-target", action="store_true", help="With backfill, also emit the latest completed trading date as a live artifact.")
     parser.add_argument("--lookback-days", type=int, default=220, help="Calendar days to fetch when start-date is omitted.")
     parser.add_argument("--limit", type=int, default=0, help="Limit the stock universe; 0 means all.")
-    parser.add_argument("--per-board", type=int, default=80, help="Maximum rows retained per board.")
+    parser.add_argument("--per-board", type=int, default=DEFAULT_PER_BOARD, help="Maximum rows retained per board; 0 keeps all rows.")
     parser.add_argument("--max-workers", type=int, default=4, help="Concurrent AkShare history requests.")
     parser.add_argument("--sleep", type=float, default=0.05, help="Seconds to sleep after each stock request.")
     parser.add_argument("--adjust", default="qfq", choices=["", "qfq", "hfq"], help="AkShare adjustment mode.")
@@ -296,6 +327,41 @@ def parse_args() -> argparse.Namespace:
 def normalize_date_arg(value: str) -> str:
     parsed = datetime.strptime(value.replace("-", ""), "%Y%m%d")
     return parsed.strftime("%Y-%m-%d")
+
+
+def coverage_rate(success_count: int, total_count: int) -> float:
+    if total_count <= 0 or success_count < 0 or success_count > total_count:
+        return 0.0
+    return success_count / total_count
+
+
+def require_minimum_coverage(
+    label: str,
+    success_count: int,
+    total_count: int,
+    minimum: float = MIN_DATA_COVERAGE,
+) -> float:
+    rate = coverage_rate(success_count, total_count)
+    if rate + 1e-12 < minimum:
+        raise SystemExit(
+            f"{label} coverage {success_count}/{total_count} ({rate:.2%}) is below the required {minimum:.0%}; refusing to write artifacts."
+        )
+    return round(rate, 6)
+
+
+def validate_production_universe(
+    build_mode: str,
+    requested_source: str,
+    actual_source: str,
+    limit: int,
+    per_board: int = DEFAULT_PER_BOARD,
+) -> None:
+    if build_mode != "production":
+        return
+    if requested_source != "code-list" or actual_source != "code-list" or limit != 0 or per_board != 0:
+        raise SystemExit(
+            "Production generation requires the complete stable code-list universe and full boards (--universe-source code-list --limit 0 --per-board 0)."
+        )
 
 
 def resolve_target_dates(args: argparse.Namespace, calendar_dates: list[str], now: datetime) -> list[str]:
@@ -921,15 +987,34 @@ def liquidity_status(
     return eligible, list(dict.fromkeys(tags))
 
 
-def enrich_row_industries(rows: list[dict[str, Any]], end_date: str) -> None:
+def industry_worker_count(requested_workers: int) -> int:
+    return max(1, min(MAX_INDUSTRY_WORKERS, requested_workers))
+
+
+def enrich_row_industries(
+    rows: list[dict[str, Any]],
+    end_date: str,
+    max_workers: int = 4,
+    sleep_seconds: float = 0.05,
+) -> None:
     codes = sorted({str(row["code"]) for row in rows})
     industry_by_code: dict[str, str] = {}
 
-    for index, code in enumerate(codes, start=1):
-        industry_by_code[code] = lookup_cninfo_industry(code, end_date)
-        if index % 20 == 0:
-            print(f"Resolved industries for {index}/{len(codes)} signal stocks.")
-        time.sleep(0.03)
+    def resolve(code: str) -> str:
+        industry = lookup_cninfo_industry(code, end_date)
+        time.sleep(sleep_seconds)
+        return industry
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=industry_worker_count(max_workers)) as executor:
+        futures = {executor.submit(resolve, code): code for code in codes}
+        for index, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+            code = futures[future]
+            try:
+                industry_by_code[code] = future.result()
+            except Exception:  # pragma: no cover - defensive provider isolation
+                industry_by_code[code] = "未分类"
+            if index % 20 == 0:
+                print(f"Resolved industries for {index}/{len(codes)} signal stocks.")
 
     for row in rows:
         row["industry"] = industry_by_code.get(str(row["code"]), row.get("industry", "未分类"))
@@ -1076,11 +1161,15 @@ def assemble_snapshot(
     meta: dict[str, Any],
     market_date: str | None = None,
 ) -> dict[str, Any]:
+    if per_board < 0:
+        raise ValueError("per_board must be 0 (all rows) or a positive limit.")
     rows = sorted(rows, key=row_sort_key)
     boards: list[dict[str, Any]] = []
 
     for definition in SIGNAL_DEFINITIONS:
-        board_rows = [row for row in rows if row["signalId"] == definition["id"]][:per_board]
+        board_rows = [row for row in rows if row["signalId"] == definition["id"]]
+        if per_board > 0:
+            board_rows = board_rows[:per_board]
         boards.append({**definition, "rows": board_rows})
 
     top_rows = [row for board in boards for row in board["rows"] if row["signalId"] in OBSERVATION_SIGNAL_IDS]

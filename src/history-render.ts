@@ -101,6 +101,7 @@ export function renderHistoryHtml(
     <aside class="review-note" aria-label="复盘说明">
       <strong>复盘边界</strong>
       <p>后续涨跌仅用于复盘，不代表策略胜率或交易建议。T+1、T+2 指交易所交易日，均为相对入榜日前复权收盘价的累计涨跌幅；停牌或价格缺失不会顺延。</p>
+      <a class="repo-link" href="https://github.com/wzxsph/BadGuard" target="_blank" rel="noopener noreferrer">在 GitHub 查看源码</a>
     </aside>
   </main>
 
@@ -327,6 +328,7 @@ main { display: grid; gap: 26px; max-width: 1180px; margin: 0 auto; padding: 0 2
 .loading { color: var(--indigo); font-weight: 900; }
 .review-note { border-left: 5px solid var(--indigo); }
 .review-note p { margin: 7px 0 0; color: var(--soft); line-height: 1.7; }
+.repo-link { display: inline-flex; margin-top: 8px; color: var(--indigo); font-size: .8rem; font-weight: 900; text-underline-offset: 3px; }
 [hidden] { display: none !important; }
 @media (max-width: 760px) {
   .history-hero { grid-template-columns: 1fr; padding: 32px 14px 20px; }

@@ -3,6 +3,8 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import {
+  assertSnapshotCompleteness,
+  assertStableStockCount,
   isImmutablePayloadPointer,
   mergeHistoryIndex,
   selectLatestLiveArtifact,
@@ -47,6 +49,7 @@ const existingLatest = existingLatestText ? parseJson(existingLatestText, "lates
 if (existingLatest && !isDate(existingLatest.marketDate)) {
   throw new Error("Existing latest-signal-snapshot has an invalid marketDate.");
 }
+await enforceLiveStockCountStability(kv, existingIndex, bundle.artifacts, force);
 const published = [];
 const skipped = [];
 const skippedPayloads = [];
@@ -188,6 +191,7 @@ async function loadAndValidateBundle(manifestFile, calendarFile) {
     const targetIndex = calendar.tradingDates.indexOf(descriptor.date);
     const expectedBaselineDates = calendar.tradingDates.slice(Math.max(0, targetIndex - 2), targetIndex);
     validateCloseTable(close, descriptor.date, expectedBaselineDates);
+    validateDataCompleteness(snapshot, close, descriptor.date);
     for (const board of snapshot.boards) {
       for (const row of board.rows) {
         if (!(row.code in close.closes)) {
@@ -295,6 +299,14 @@ function validateCloseMap(values, label) {
   }
 }
 
+function validateDataCompleteness(snapshot, close, date) {
+  try {
+    assertSnapshotCompleteness(snapshot, close);
+  } catch (error) {
+    throw new Error(`Snapshot ${date} completeness validation failed: ${error.message}`);
+  }
+}
+
 function assertSorted(rows, label) {
   const sorted = [...rows].sort(compareRows);
   for (let index = 0; index < rows.length; index += 1) {
@@ -338,6 +350,27 @@ function validateExistingIndex(index) {
     tradingDates: [...index.tradingDates],
     entries: [...entryByDate.values()].sort((left, right) => right.date.localeCompare(left.date))
   };
+}
+
+async function enforceLiveStockCountStability(kv, existingIndex, artifacts, force) {
+  if (force) return;
+  const liveCandidates = artifacts
+    .filter((artifact) => artifact.source === "live" && shouldPublishDate(existingIndex.entries, artifact.date, false))
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  for (const artifact of liveCandidates) {
+    const priorEntry = existingIndex.entries
+      .filter((entry) => entry.status === "ready" && entry.date < artifact.date)
+      .sort((left, right) => right.date.localeCompare(left.date))[0];
+    if (!priorEntry) continue;
+
+    const priorKey = priorEntry.snapshotKey ?? `history-snapshot:${priorEntry.date}`;
+    const priorSnapshot = parseJson(await kv.get(priorKey), priorKey);
+    if (priorSnapshot.marketDate !== priorEntry.date) {
+      throw new Error(`Prior snapshot ${priorKey} has the wrong market date.`);
+    }
+    assertStableStockCount(priorSnapshot, artifact.snapshot);
+  }
 }
 
 async function readImmutableEntryPayload(kv, entry, date) {

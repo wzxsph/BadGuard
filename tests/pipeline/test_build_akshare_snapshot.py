@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import unittest
 from datetime import datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 
 from scripts.build_akshare_snapshot import (
+    DEFAULT_PER_BOARD,
     MIN_DAILY_AMOUNT,
     MIN_FLOAT_MARKET_CAP,
     StockHistory,
@@ -17,14 +19,19 @@ from scripts.build_akshare_snapshot import (
     assemble_snapshot,
     build_baseline_closes,
     calendar_publication_dates,
+    coverage_rate,
+    enrich_row_industries,
     evaluate_stock_for_date,
     liquidity_status,
     make_row,
     normalize_history,
+    industry_worker_count,
     previous_trading_dates,
     resolve_target_dates,
+    require_minimum_coverage,
     row_sort_key,
     source_for_target,
+    validate_production_universe,
 )
 
 
@@ -245,6 +252,65 @@ class TargetDateTests(unittest.TestCase):
 
         self.assertEqual(calendar, ["2026-07-08", "2026-07-09"])
         self.assertEqual(previous_trading_dates(calendar, "2026-07-08", 2), [])
+
+
+class CompletenessAndStorageTests(unittest.TestCase):
+    def test_ninety_percent_coverage_is_inclusive(self) -> None:
+        self.assertEqual(coverage_rate(90, 100), 0.9)
+        self.assertEqual(require_minimum_coverage("history", 90, 100), 0.9)
+        with self.assertRaises(SystemExit):
+            require_minimum_coverage("history", 89, 100)
+        with self.assertRaises(SystemExit):
+            require_minimum_coverage("history", 0, 0)
+
+    def test_per_board_zero_keeps_all_rows(self) -> None:
+        self.assertEqual(DEFAULT_PER_BOARD, 0)
+        rows = [
+            {"signalId": "low-rebound", "signalStrength": strength, "floatMarketCap": 5_000_000_000, "code": f"00000{code}"}
+            for code, strength in [(1, 70), (2, 90), (3, 80)]
+        ]
+
+        all_rows = assemble_snapshot(rows, 0, "test", {}, "2026-07-08")
+        limited = assemble_snapshot(rows, 2, "test", {}, "2026-07-08")
+
+        low_board = next(board for board in all_rows["boards"] if board["id"] == "low-rebound")
+        limited_board = next(board for board in limited["boards"] if board["id"] == "low-rebound")
+        self.assertEqual([row["code"] for row in low_board["rows"]], ["000002", "000003", "000001"])
+        self.assertEqual(len(limited_board["rows"]), 2)
+        with self.assertRaises(ValueError):
+            assemble_snapshot(rows, -1, "test", {}, "2026-07-08")
+
+    def test_production_requires_full_stable_code_list(self) -> None:
+        validate_production_universe("production", "code-list", "code-list", 0)
+        validate_production_universe("staging", "realtime", "realtime", 100)
+        for requested, actual, limit in [
+            ("realtime", "realtime", 0),
+            ("code-list", "realtime", 0),
+            ("code-list", "code-list", 1000),
+        ]:
+            with self.assertRaises(SystemExit):
+                validate_production_universe("production", requested, actual, limit)
+        with self.assertRaises(SystemExit):
+            validate_production_universe("production", "code-list", "code-list", 0, per_board=80)
+
+    def test_industry_enrichment_is_bounded_unique_and_deterministic(self) -> None:
+        rows = [
+            {"code": "000002", "industry": "旧值"},
+            {"code": "000001", "industry": "旧值"},
+            {"code": "000002", "industry": "重复旧值"},
+        ]
+        expected = {"000001": "银行", "000002": "软件"}
+
+        with patch(
+            "scripts.build_akshare_snapshot.lookup_cninfo_industry",
+            side_effect=lambda code, _end_date: expected[code],
+        ) as lookup:
+            enrich_row_industries(rows, "20260710", max_workers=99, sleep_seconds=0)
+
+        self.assertEqual(industry_worker_count(99), 8)
+        self.assertEqual(lookup.call_count, 2)
+        self.assertEqual([row["industry"] for row in rows], ["软件", "银行", "软件"])
+        self.assertEqual([row["code"] for row in rows], ["000002", "000001", "000002"])
 
 
 def indicator_rows(**overrides: float) -> tuple[pd.Series, pd.Series]:
