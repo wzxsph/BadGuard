@@ -1,13 +1,13 @@
 name = "badguard"
-account_id = "c150f9a81fd3d95a9c31d5751c99eabc"
+account_id = "d715dc07bce374169b3395aabbfeb69b"
 main = "src/index.ts"
 compatibility_date = "2026-07-09"
 workers_dev = true
 
 [[kv_namespaces]]
 binding = "SIGNAL_KV"
-id = "b1aa99421784423cb2669d98ffb302eb"
-preview_id = "f20d6971ccb24ec68ae81768e1f0ca8e"
+id = "a1743172f6a7421793fb63758a187798"
+preview_id = "6bcc44489d5c4fca8cd198ec8b98623b"
 
 # Optional vars for a compatible JSON market data provider:
 # DATA_PROVIDER_URL = "https://your-provider.example.com/a-share/daily-bars"
