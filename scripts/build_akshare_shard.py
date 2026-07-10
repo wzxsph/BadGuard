@@ -326,6 +326,7 @@ def fetch_shard_histories_with_retries(
         round_context = {
             **context,
             "_absoluteSoftDeadline": absolute_deadline,
+            "_retryRoundIndex": round_index,
             # Keep the primary source deterministic for the first pass. Only
             # unresolved codes may use the secondary source on later rounds,
             # avoiding a provider outage without changing successful histories.
@@ -413,7 +414,10 @@ def load_or_fetch_history(
                 requested_start,
                 (datetime.strptime(last_cached_date, "%Y-%m-%d") - timedelta(days=INCREMENTAL_OVERLAP_DAYS)).strftime("%Y-%m-%d"),
             )
-            incremental = fetch_requested_history(stock, context, overlap_start, requested_end)
+            incremental_context = context
+            if int(context.get("_retryRoundIndex", 0)) == 0:
+                incremental_context = {**context, "_historySourceThisRound": cached.history.provider}
+            incremental = fetch_requested_history(stock, incremental_context, overlap_start, requested_end)
             merged = merge_incremental_history(cached.history, incremental, requested_start, requested_end)
             if merged is not None:
                 write_history_cache(
@@ -513,8 +517,6 @@ def read_history_cache_entry(path: Path, expected_metadata: dict[str, Any]) -> H
         stock = StockItem(expected_metadata["code"], expected_metadata["name"], expected_metadata["industry"])
         provider = payload.get("provider")
         if provider not in {"sina", "eastmoney"}:
-            return None
-        if not expected_metadata["allowProviderFallback"] and provider != expected_metadata["historySource"]:
             return None
         return HistoryCacheEntry(
             history=StockHistory(stock=stock, bars=bars, provider=provider),

@@ -262,6 +262,40 @@ class HistoryCacheTests(unittest.TestCase):
         self.assertEqual(fetch.call_args_list[1].args[1:3], ("20260601", "20260710"))
         self.assertEqual(history.bars.iloc[0]["close"], 8.5)
 
+    def test_first_incremental_round_reuses_the_cached_provider(self) -> None:
+        context = {
+            **self.context,
+            "startDate": "20260601",
+            "endDate": "20260710",
+            "sleep": 0,
+            "requestTimeout": 12,
+            "requestAttempts": 2,
+            "_retryRoundIndex": 0,
+        }
+        cached_bars = make_bars({"2026-06-02": 9.0, "2026-07-09": 10.1})
+        incremental_bars = make_bars({"2026-07-09": 10.1, "2026-07-10": 10.2})
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache_dir = Path(directory)
+            metadata = history_cache_metadata(self.stock, context)
+            path = history_cache_path(cache_dir, metadata)
+            write_history_cache(
+                path,
+                metadata,
+                StockHistory(self.stock, cached_bars, "sina"),
+                fetched_start="2026-06-01",
+                fetched_through="2026-07-09",
+            )
+            with patch(
+                "scripts.build_akshare_shard.fetch_stock_history",
+                return_value=StockHistory(self.stock, incremental_bars, "sina"),
+            ) as fetch:
+                history, cache_mode = load_or_fetch_history(self.stock, context, cache_dir)
+
+        self.assertEqual(cache_mode, "incremental")
+        self.assertEqual(history.provider, "sina")
+        self.assertEqual(fetch.call_args.args[4], "sina")
+
     def test_suspension_is_cached_as_queried_through_without_filling_close(self) -> None:
         context = {
             **self.context,
