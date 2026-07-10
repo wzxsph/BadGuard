@@ -129,6 +129,7 @@ KDJ / MACD / RSI 的具体数值默认收起来，点“展开详情”再看。
 7. KV 发布前，Actions 会把 prior/proposed 股票池版本、run context、分片检查点、manifest、日期快照、收盘价表和交易日历保存为 GitHub Actions artifact；最终验证包保留 90 天，便于审计和恢复。股票池、历史快照与收盘价表都使用不可变版本 key，只有整包验证成功才切换索引指针；抓取失败时线上继续显示最近一份完整榜单。
 8. Actions 先写不可变版本的历史快照和收盘价表，再以 `signal-history-index` 切换可见版本；提交后再修复 `history-snapshot:YYYY-MM-DD`、`market-close:YYYY-MM-DD`、`signal-snapshot:YYYY-MM-DD` 和 `latest-signal-snapshot` 等兼容别名。即使别名写入失败，页面仍通过索引指针读取完整版本。
 9. Worker 优先按历史索引指针渲染已提交的今日页面，并兼容更晚的旧版 `latest-signal-snapshot`；没有 KV 或 KV 中仍是旧格式同日数据时，读取随代码部署的已验证快照。历史接口使用严格 KV 读取，KV 故障时明确报错，不会降级成最新榜单。
+10. 新增定期质量巡检（`.github/workflows/audit-akshare-quality.yml`）：每小时抓取历史索引与快照、收盘价表最近窗口进行完整性检查（历史成功率、精确收盘覆盖率、缺口分类一致性）。若发现缺失或质量退化，会将结果写入 `data/quality-audit.json`，并自动触发 `refresh-akshare.yml` 做定向回补；回补边界用 `backfill_start`/`backfill_end` 传递，`include_live_target` 允许在补齐窗口中保留已完成日的“实时留存”策略。该条目是为避免“短暂缺失未上传”而补上的补偿机制，并且可在手动触发 `Audit AkShare Quality and Repair` 后人工复核再执行。
 
 同一个市场日的生产快照默认不覆盖，避免同一天数据因为调试参数变化而来回跳。手动触发 `Refresh AkShare Signals` 默认只写 `staging-signal-snapshot`，可以调整 `scan_limit` 做验证；只有显式设置 `publish_production=true`，并在需要重发同日数据时设置 `force_publish=true`，才会同步更新该日历史记录。索引按日期去重，强制重发通过不可变版本 key 加索引指针切换，避免读到半新半旧的数据。
 

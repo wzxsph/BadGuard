@@ -1,0 +1,98 @@
+name: Audit AkShare Quality and Repair
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1-7 * * *"
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: badguard-akshare-quality-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Audit history index for missing or degraded dates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve Cloudflare namespace
+        id: namespace
+        run: |
+          KV_NAMESPACE_ID="$(node --input-type=module <<'JS'
+          import fs from 'node:fs';
+
+          const toml = fs.readFileSync('wrangler.toml', 'utf8');
+          const match = toml.match(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"SIGNAL_KV"[\s\S]*?id\s*=\s*"([^"]+)"/);
+          if (!match) throw new Error('SIGNAL_KV id not found in wrangler.toml');
+          console.log(match[1]);
+          JS
+          )"
+          echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
+
+      - name: Run historical quality audit
+        id: audit
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          KV_NAMESPACE_ID: ${{ env.KV_NAMESPACE_ID }}
+        run: |
+          node scripts/audit_history_quality.mjs --output data/quality-audit.json
+
+      - name: Upload quality audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: badguard-quality-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: data/quality-audit.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Dispatch targeted production backfill
+        if: ${{ steps.audit.outputs.NEEDS_BACKFILL == 'true' && steps.audit.outputs.BACKFILL_START != '' && steps.audit.outputs.BACKFILL_END != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_REF: ${{ github.ref_name }}
+          BACKFILL_START: ${{ steps.audit.outputs.BACKFILL_START }}
+          BACKFILL_END: ${{ steps.audit.outputs.BACKFILL_END }}
+          INCLUDE_LIVE_TARGET: ${{ steps.audit.outputs.INCLUDE_LIVE_TARGET }}
+        run: |
+          if [ -z "$BACKFILL_START" ] || [ -z "$BACKFILL_END" ]; then
+            echo "Missing backfill boundaries in quality audit output." >&2
+            exit 0
+          fi
+
+          REQUEST_PAYLOAD="$(python - <<'PY'
+          import json, os
+
+          payload = {
+            "ref": os.environ["RUN_REF"],
+            "inputs": {
+              "scan_limit": "1000",
+              "publish_production": "true",
+              "force_publish": "false",
+              "bootstrap_seed": "false",
+              "backfill_start": os.environ["BACKFILL_START"].replace("-", ""),
+              "backfill_end": os.environ["BACKFILL_END"].replace("-", ""),
+              "include_live_target": os.environ["INCLUDE_LIVE_TARGET"] if os.environ["INCLUDE_LIVE_TARGET"] in {"true", "false"} else "false",
+            }
+          }
+          print(json.dumps(payload))
+          PY
+          )"
+          curl -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            -d "$REQUEST_PAYLOAD" \
+            "https://api.github.com/repos/$REPO/actions/workflows/refresh-akshare.yml/dispatches"

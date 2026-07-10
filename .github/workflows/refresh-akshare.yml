@@ -27,6 +27,10 @@ on:
         description: Optional last exchange date to backfill; defaults to the prior exchange date.
         required: false
         default: ""
+      include_live_target:
+        description: Also emit the latest completed trading date as live when backfilling.
+        required: false
+        default: "false"
   schedule:
     - cron: "30 7 * * 1-5"
 
@@ -201,6 +205,7 @@ jobs:
           PUBLISH_PRODUCTION: ${{ github.event_name == 'schedule' || github.event.inputs.publish_production == 'true' }}
           BACKFILL_START: ${{ github.event.inputs.backfill_start }}
           BACKFILL_END: ${{ github.event.inputs.backfill_end }}
+          INCLUDE_LIVE_TARGET: ${{ github.event.inputs.include_live_target }}
         run: |
           SCAN_LIMIT="${{ github.event.inputs.scan_limit }}"
           if [ -z "$SCAN_LIMIT" ]; then
@@ -223,6 +228,9 @@ jobs:
             EXTRA_ARGS+=(--backfill-start "$BACKFILL_START")
             if [ -n "$BACKFILL_END" ]; then
               EXTRA_ARGS+=(--backfill-end "$BACKFILL_END")
+            fi
+            if [ "$INCLUDE_LIVE_TARGET" = "true" ]; then
+              EXTRA_ARGS+=(--include-live-target)
             fi
           elif [ "$PUBLISH_PRODUCTION" = "true" ] && [ -n "$HISTORY_BACKFILL_START" ]; then
             UNIVERSE_SOURCE=code-list
