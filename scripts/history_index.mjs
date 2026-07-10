@@ -10,6 +10,20 @@ export function needsFullHistoryBootstrap(entries, historyStart = "2026-07-08") 
   return !startReady || seedRemains;
 }
 
+export function earliestMissingReadyDate(entries, tradingDates, throughDate, historyStart = "2026-07-08") {
+  const readyDates = new Set(
+    (entries || [])
+      .filter((entry) => entry?.status === "ready" && typeof entry.date === "string")
+      .map((entry) => entry.date)
+  );
+  return (tradingDates || []).find((date) => (
+    typeof date === "string" &&
+    date >= historyStart &&
+    date <= throughDate &&
+    !readyDates.has(date)
+  )) ?? null;
+}
+
 export function mergeHistoryIndex(existingIndex, tradingDates, updates, updatedAt) {
   const byDate = new Map((existingIndex?.entries || []).map((entry) => [entry.date, entry]));
   for (const entry of updates) byDate.set(entry.date, entry);

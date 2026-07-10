@@ -224,6 +224,11 @@ jobs:
             if [ -n "$BACKFILL_END" ]; then
               EXTRA_ARGS+=(--backfill-end "$BACKFILL_END")
             fi
+          elif [ "$PUBLISH_PRODUCTION" = "true" ] && [ -n "$HISTORY_BACKFILL_START" ]; then
+            UNIVERSE_SOURCE=code-list
+            SNAPSHOT_SOURCE=backfill
+            SCAN_LIMIT=0
+            EXTRA_ARGS+=(--backfill-start "$HISTORY_BACKFILL_START" --include-live-target)
           elif [ "$PUBLISH_PRODUCTION" = "true" ] && [ "$HISTORY_BOOTSTRAP_REQUIRED" = "true" ]; then
             UNIVERSE_SOURCE=code-list
             SNAPSHOT_SOURCE=backfill

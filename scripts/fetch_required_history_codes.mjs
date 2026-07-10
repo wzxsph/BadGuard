@@ -2,12 +2,13 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { needsFullHistoryBootstrap } from "./history_index.mjs";
+import { earliestMissingReadyDate, needsFullHistoryBootstrap } from "./history_index.mjs";
 
 const output = process.argv[2] || "data/required-history-codes.json";
 const production = process.env.PUBLISH_PRODUCTION === "true";
 if (!production) {
   await setBootstrapRequired(false);
+  await setHistoryBackfillStart(null);
   await writeCodes([]);
   process.exit(0);
 }
@@ -21,13 +22,14 @@ const headers = { Authorization: `Bearer ${apiToken}` };
 const indexText = await get("signal-history-index");
 if (!indexText) {
   await setBootstrapRequired(true);
+  await setHistoryBackfillStart(null);
   await writeCodes([]);
   process.exit(0);
 }
 
 const index = JSON.parse(indexText);
-if (!Array.isArray(index.entries)) {
-  throw new Error("signal-history-index entries are invalid.");
+if (!Array.isArray(index.entries) || !Array.isArray(index.tradingDates)) {
+  throw new Error("signal-history-index entries or tradingDates are invalid.");
 }
 
 const entries = index.entries
@@ -35,6 +37,12 @@ const entries = index.entries
   .sort((left, right) => right.date.localeCompare(left.date))
   .slice(0, 2);
 await setBootstrapRequired(needsFullHistoryBootstrap(index.entries));
+const completedThrough = latestCompletedTradingDate(index.tradingDates);
+await setHistoryBackfillStart(
+  completedThrough
+    ? earliestMissingReadyDate(index.entries, index.tradingDates, completedThrough)
+    : null
+);
 const codes = new Set();
 
 for (const entry of entries) {
@@ -93,4 +101,32 @@ function isDate(value) {
 async function setBootstrapRequired(required) {
   if (!process.env.GITHUB_ENV) return;
   await fs.appendFile(process.env.GITHUB_ENV, `HISTORY_BOOTSTRAP_REQUIRED=${required ? "true" : "false"}\n`, "utf8");
+}
+
+async function setHistoryBackfillStart(date) {
+  if (!process.env.GITHUB_ENV) return;
+  await fs.appendFile(
+    process.env.GITHUB_ENV,
+    `HISTORY_BACKFILL_START=${date ? date.replaceAll("-", "") : ""}\n`,
+    "utf8"
+  );
+}
+
+function latestCompletedTradingDate(tradingDates, now = new Date()) {
+  if (!Array.isArray(tradingDates)) return null;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Shanghai",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(now).filter((part) => part.type !== "literal").map((part) => [part.type, part.value])
+  );
+  const localDate = `${parts.year}-${parts.month}-${parts.day}`;
+  const beforeClose = Number(parts.hour) < 15;
+  return [...tradingDates]
+    .filter((date) => typeof date === "string" && (date < localDate || (date === localDate && !beforeClose)))
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
 }

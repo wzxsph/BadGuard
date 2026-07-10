@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import {
   assertSnapshotCompleteness,
   assertStableStockCount,
+  earliestMissingReadyDate,
   isImmutablePayloadPointer,
   mergeHistoryIndex,
   needsFullHistoryBootstrap,
@@ -52,6 +53,20 @@ test("full bootstrap remains required until 7/8 exists and repository seeds are 
     { date: "2026-07-08", status: "ready" },
     { date: "2026-07-09", status: "ready", bootstrapSeed: true }
   ])).toBe(true);
+});
+
+test("the earliest missing completed exchange date is selected for gap backfill", () => {
+  const calendar = ["2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13"];
+  expect(earliestMissingReadyDate([
+    { date: "2026-07-08", status: "ready" },
+    { date: "2026-07-10", status: "ready" }
+  ], calendar, "2026-07-10")).toBe("2026-07-09");
+  expect(earliestMissingReadyDate([
+    { date: "2026-07-08", status: "ready" },
+    { date: "2026-07-09", status: "ready" },
+    { date: "2026-07-10", status: "ready" }
+  ], calendar, "2026-07-10")).toBeNull();
+  expect(earliestMissingReadyDate([], calendar, "2026-07-09")).toBe("2026-07-08");
 });
 
 test("forced update replaces a date without duplicating the index", () => {
@@ -110,7 +125,7 @@ test("skipped-date repair only trusts immutable date-scoped pointers", () => {
   )).toBe(false);
 });
 
-test("full production code-list snapshots reject stock-count shrink above five percent", () => {
+test("full production code-list snapshots reject stock-count shrink above one percent", () => {
   const snapshot = (stockCount, overrides = {}) => ({
     meta: {
       buildMode: "production",
