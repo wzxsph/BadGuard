@@ -112,7 +112,8 @@ def merge_shards(
     cache_incremental_hit_count = sum(int(shard["cacheIncrementalHitCount"]) for shard in shards)
     cache_refresh_count = sum(int(shard["cacheRefreshCount"]) for shard in shards)
 
-    if context["allowProviderFallback"]:
+    used_fallback = len(provider_counts) > 1
+    if context["allowProviderFallback"] or used_fallback:
         source_label = (
             "AkShare 日线（新浪优先，东财备用）"
             if context["historySource"] == "sina"

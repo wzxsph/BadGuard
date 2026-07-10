@@ -48,7 +48,7 @@ export function isFullCodeListProductionSnapshot(snapshot) {
   );
 }
 
-export function assertStableStockCount(previousSnapshot, nextSnapshot, maximumShrink = 0.05) {
+export function assertStableStockCount(previousSnapshot, nextSnapshot, maximumShrink = 0.01) {
   if (!isFullCodeListProductionSnapshot(previousSnapshot) || !isFullCodeListProductionSnapshot(nextSnapshot)) {
     return { checked: false, shrinkRate: null };
   }

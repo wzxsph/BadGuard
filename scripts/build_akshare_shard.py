@@ -323,7 +323,19 @@ def fetch_shard_histories_with_retries(
     for round_index in range(maximum_rounds):
         if not remaining or time.monotonic() >= absolute_deadline:
             break
-        round_context = {**context, "_absoluteSoftDeadline": absolute_deadline}
+        round_context = {
+            **context,
+            "_absoluteSoftDeadline": absolute_deadline,
+            # Keep the primary source deterministic for the first pass. Only
+            # unresolved codes may use the secondary source on later rounds,
+            # avoiding a provider outage without changing successful histories.
+            "_allowProviderFallbackThisRound": round_index > 0,
+            "_historySourceThisRound": (
+                context["historySource"]
+                if round_index == 0
+                else "sina" if context["historySource"] == "eastmoney" else "eastmoney"
+            ),
+        }
         print(
             f"Shard {shard_index + 1}/{context['shardCount']} fetch round "
             f"{round_index + 1}/{maximum_rounds}: {len(remaining)} unresolved stocks.",
@@ -435,11 +447,11 @@ def fetch_requested_history(
         start_date.replace("-", ""),
         end_date.replace("-", ""),
         "" if context["adjust"] == "none" else context["adjust"],
-        context["historySource"],
+        context.get("_historySourceThisRound", context["historySource"]),
         float(context["sleep"]),
         float(context["requestTimeout"]),
         int(context["requestAttempts"]),
-        bool(context["allowProviderFallback"]),
+        bool(context.get("_allowProviderFallbackThisRound", context["allowProviderFallback"])),
     )
     if history.bars.empty:
         raise RuntimeError("provider returned no normalized bars")

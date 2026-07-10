@@ -358,7 +358,12 @@ function validateBundleUniverse(bundle, universe, bootstrapSeedMode) {
     }
     return;
   }
-  if (revision === undefined && !universe) return;
+  if (revision === undefined && !universe) {
+    if (bundle.artifacts.some((artifact) => artifact.snapshot.meta?.buildMode === "production")) {
+      throw new Error("Production history publication requires an accepted universe manifest.");
+    }
+    return;
+  }
   if (!universe || revision !== universe.manifest.revision) {
     throw new Error("History bundle and universe manifest revisions do not match.");
   }
@@ -593,13 +598,14 @@ function validateExistingIndex(index) {
 }
 
 async function enforceLiveStockCountStability(kv, existingIndex, artifacts, force, bootstrapSeedMode = false) {
-  if (force) return;
   const liveCandidates = artifacts
-    .filter((artifact) => artifact.source === "live" && shouldPublishDate(
-      existingIndex.entries,
-      artifact.date,
-      false,
-      { replaceBootstrap: !bootstrapSeedMode }
+    .filter((artifact) => artifact.source === "live" && (
+      force || shouldPublishDate(
+        existingIndex.entries,
+        artifact.date,
+        false,
+        { replaceBootstrap: !bootstrapSeedMode }
+      )
     ))
     .sort((left, right) => left.date.localeCompare(right.date));
 

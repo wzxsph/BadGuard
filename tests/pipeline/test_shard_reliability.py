@@ -380,6 +380,7 @@ class ProgressTests(unittest.TestCase):
                 {
                     "historyRetryRounds": 4,
                     "historyRetryBackoffSeconds": 0,
+                    "historySource": "eastmoney",
                     "softDeadlineMinutes": 5,
                     "shardCount": 1,
                 },
@@ -396,6 +397,10 @@ class ProgressTests(unittest.TestCase):
             [[stock.code for stock in call.args[0]] for call in fetch.call_args_list],
             [[stock.code for stock in stocks], [stocks[1].code, stocks[2].code], [stocks[2].code]],
         )
+        self.assertFalse(fetch.call_args_list[0].args[1]["_allowProviderFallbackThisRound"])
+        self.assertTrue(fetch.call_args_list[1].args[1]["_allowProviderFallbackThisRound"])
+        self.assertEqual(fetch.call_args_list[0].args[1]["_historySourceThisRound"], "eastmoney")
+        self.assertEqual(fetch.call_args_list[1].args[1]["_historySourceThisRound"], "sina")
 
     def test_fast_completions_do_not_emit_one_log_line_per_stock(self) -> None:
         stocks = [StockItem(f"{index:06d}", f"测试{index}", "测试") for index in range(30)]

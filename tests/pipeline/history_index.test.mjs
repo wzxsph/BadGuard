@@ -121,8 +121,8 @@ test("full production code-list snapshots reject stock-count shrink above five p
     }
   });
 
-  expect(assertStableStockCount(snapshot(1000), snapshot(950))).toEqual({ checked: true, shrinkRate: 0.05 });
-  expect(() => assertStableStockCount(snapshot(1000), snapshot(949))).toThrow(/exceeding 5%/);
+  expect(assertStableStockCount(snapshot(1000), snapshot(990))).toEqual({ checked: true, shrinkRate: 0.01 });
+  expect(() => assertStableStockCount(snapshot(1000), snapshot(989))).toThrow(/exceeding 1%/);
   expect(assertStableStockCount(snapshot(1000), snapshot(500, { buildMode: "staging" }))).toEqual({
     checked: false,
     shrinkRate: null
