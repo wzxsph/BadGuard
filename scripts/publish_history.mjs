@@ -17,8 +17,9 @@ const calendarPath = args.calendar || "data/trading-calendar.json";
 const validateOnly = Boolean(args["validate-only"]);
 const force = Boolean(args.force) || process.env.FORCE_PUBLISH === "true";
 const production = process.env.PUBLISH_PRODUCTION === "true";
+const bootstrapSeed = Boolean(args["bootstrap-seed"]);
 
-const bundle = await loadAndValidateBundle(manifestPath, calendarPath);
+const bundle = await loadAndValidateBundle(manifestPath, calendarPath, bootstrapSeed);
 if (validateOnly) {
   console.log(JSON.stringify(bundle.summary, null, 2));
   process.exit(0);
@@ -30,6 +31,9 @@ const namespaceId = requiredEnv("KV_NAMESPACE_ID");
 const kv = createKvClient(accountId, apiToken, namespaceId);
 
 if (!production) {
+  if (bootstrapSeed) {
+    throw new Error("Bootstrap seed publication is production-only.");
+  }
   const latest = [...bundle.artifacts].sort((left, right) => right.date.localeCompare(left.date))[0];
   await kv.put("staging-signal-snapshot", latest.snapshotText);
   const stored = parseJson(await kv.get("staging-signal-snapshot"), "staging-signal-snapshot");
@@ -44,12 +48,29 @@ const existingIndexText = await kv.get("signal-history-index");
 const existingIndex = existingIndexText
   ? validateExistingIndex(parseJson(existingIndexText, "signal-history-index"))
   : { version: 1, tradingDates: [], entries: [] };
+if (bootstrapSeed) {
+  const targetDate = bundle.artifacts[0].date;
+  const existingTarget = existingIndex.entries.find((entry) => entry.date === targetDate && entry.status === "ready");
+  if (existingTarget) {
+    await readImmutableEntryPayload(kv, existingTarget, targetDate);
+    console.log(JSON.stringify({
+      mode: "production-bootstrap-seed",
+      published: [],
+      skipped: [targetDate],
+      reason: "history date already has an immutable ready entry"
+    }, null, 2));
+    process.exit(0);
+  }
+  if (existingIndex.entries.length > 0) {
+    throw new Error("Bootstrap seed is only allowed for an empty history index.");
+  }
+}
 const existingLatestText = await kv.get("latest-signal-snapshot");
 const existingLatest = existingLatestText ? parseJson(existingLatestText, "latest-signal-snapshot") : null;
 if (existingLatest && !isDate(existingLatest.marketDate)) {
   throw new Error("Existing latest-signal-snapshot has an invalid marketDate.");
 }
-await enforceLiveStockCountStability(kv, existingIndex, bundle.artifacts, force);
+await enforceLiveStockCountStability(kv, existingIndex, bundle.artifacts, force, bootstrapSeed);
 const published = [];
 const skipped = [];
 const skippedPayloads = [];
@@ -64,7 +85,7 @@ for (const entry of existingIndex.entries) {
 await kv.put("market-trading-calendar", JSON.stringify(bundle.calendar));
 
 for (const artifact of [...bundle.artifacts].sort((left, right) => left.date.localeCompare(right.date))) {
-  if (!shouldPublishDate(existingIndex.entries, artifact.date, force)) {
+  if (!shouldPublishDate(existingIndex.entries, artifact.date, force, { replaceBootstrap: !bootstrapSeed })) {
     skipped.push(artifact.date);
     const indexedEntry = existingIndex.entries.find((entry) => entry.date === artifact.date);
     skippedPayloads.push(await readImmutableEntryPayload(kv, indexedEntry, artifact.date));
@@ -90,7 +111,8 @@ for (const artifact of [...bundle.artifacts].sort((left, right) => left.date.loc
     publishedAt: new Date().toISOString(),
     snapshotKey,
     closeKey,
-    revision
+    revision,
+    ...(artifact.bootstrapSeed === true ? { bootstrapSeed: true } : {})
   };
   published.push({ ...artifact, ...entry });
 }
@@ -122,7 +144,9 @@ for (const payload of skippedPayloads) {
   await kv.put(`signal-snapshot:${payload.date}`, payload.snapshotText);
 }
 
-const latestLiveEntry = selectLatestLiveArtifact(nextIndex.entries, existingLatest?.marketDate);
+const latestLiveEntry = bootstrapSeed && existingLatest
+  ? null
+  : selectLatestLiveArtifact(nextIndex.entries, existingLatest?.marketDate);
 let latestLive = null;
 if (latestLiveEntry) {
   const snapshotKey = latestLiveEntry.snapshotKey ?? `history-snapshot:${latestLiveEntry.date}`;
@@ -137,7 +161,7 @@ if (latestLiveEntry) {
 
 await verifyRemotePublication(kv, bundle, published, skippedPayloads, latestLive);
 console.log(JSON.stringify({
-  mode: "production",
+  mode: bootstrapSeed ? "production-bootstrap-seed" : "production",
   force,
   published: published.map((entry) => ({ date: entry.date, revision: entry.revision })),
   skipped,
@@ -163,11 +187,25 @@ function parseArgs(values) {
   return parsed;
 }
 
-async function loadAndValidateBundle(manifestFile, calendarFile) {
+async function loadAndValidateBundle(manifestFile, calendarFile, bootstrapSeedMode = false) {
   const manifest = parseJson(await fs.readFile(manifestFile, "utf8"), manifestFile);
   const calendar = parseJson(await fs.readFile(calendarFile, "utf8"), calendarFile);
   if (manifest.version !== 1 || !Array.isArray(manifest.artifacts) || manifest.artifacts.length === 0) {
     throw new Error("Manifest must be version 1 with at least one artifact.");
+  }
+  if ((manifest.bootstrapSeed === true) !== bootstrapSeedMode) {
+    throw new Error("Bootstrap seed manifest requires an explicit --bootstrap-seed publication flag.");
+  }
+  if (bootstrapSeedMode) {
+    if (
+      manifest.artifacts.length !== 1 ||
+      manifest.artifacts[0]?.date !== "2026-07-09" ||
+      manifest.artifacts[0]?.source !== "live" ||
+      manifest.artifacts[0]?.bootstrapSeed !== true ||
+      calendar.bootstrapSeed !== true
+    ) {
+      throw new Error("Bootstrap seed must contain only the verified live 2026-07-09 artifact.");
+    }
   }
   if (calendar.version !== 1 || !Array.isArray(calendar.tradingDates)) {
     throw new Error("Calendar must be { version: 1, tradingDates: string[] }.");
@@ -190,8 +228,8 @@ async function loadAndValidateBundle(manifestFile, calendarFile) {
     validateSnapshot(snapshot, descriptor.date);
     const targetIndex = calendar.tradingDates.indexOf(descriptor.date);
     const expectedBaselineDates = calendar.tradingDates.slice(Math.max(0, targetIndex - 2), targetIndex);
-    validateCloseTable(close, descriptor.date, expectedBaselineDates);
-    validateDataCompleteness(snapshot, close, descriptor.date);
+    validateCloseTable(close, descriptor.date, expectedBaselineDates, bootstrapSeedMode);
+    validateDataCompleteness(snapshot, close, descriptor.date, bootstrapSeedMode);
     for (const board of snapshot.boards) {
       for (const row of board.rows) {
         if (!(row.code in close.closes)) {
@@ -216,7 +254,8 @@ async function loadAndValidateBundle(manifestFile, calendarFile) {
         closes: Object.keys(artifact.close.closes).length,
         boards: artifact.snapshot.boards.map((board) => [board.id, board.rows.length])
       })),
-      tradingDates: calendar.tradingDates.length
+      tradingDates: calendar.tradingDates.length,
+      bootstrapSeed: bootstrapSeedMode
     }
   };
 }
@@ -261,7 +300,7 @@ function validateSnapshot(snapshot, date) {
   assertSorted(snapshot.topRows, `${date}/topRows`);
 }
 
-function validateCloseTable(close, date, expectedBaselineDates) {
+function validateCloseTable(close, date, expectedBaselineDates, bootstrapSeedMode = false) {
   if (close.marketDate !== date || !close.closes || Array.isArray(close.closes) || typeof close.closes !== "object") {
     throw new Error(`Close table ${date} must be { marketDate, closes }.`);
   }
@@ -299,11 +338,52 @@ function validateCloseMap(values, label) {
   }
 }
 
-function validateDataCompleteness(snapshot, close, date) {
+function validateDataCompleteness(snapshot, close, date, bootstrapSeedMode = false) {
+  if (bootstrapSeedMode) {
+    validateBootstrapSeedCompleteness(snapshot, close, date);
+    return;
+  }
+
   try {
     assertSnapshotCompleteness(snapshot, close);
   } catch (error) {
     throw new Error(`Snapshot ${date} completeness validation failed: ${error.message}`);
+  }
+}
+
+function validateBootstrapSeedCompleteness(snapshot, close, date) {
+  const rows = snapshot.boards.flatMap((board) => board.rows);
+  const rankedCodes = [...new Set(rows.map((row) => row.code))].sort();
+  const closeCodes = Object.keys(close.closes).sort();
+  const meta = snapshot.meta;
+  if (
+    date !== "2026-07-09" ||
+    snapshot.meta?.snapshotSource !== "live" ||
+    meta?.bootstrapSeed !== true ||
+    meta.bootstrapCloseCoverage !== "ranked-codes-only" ||
+    meta.bootstrapRankedRowCount !== rows.length ||
+    meta.bootstrapPublishedCloseCount !== closeCodes.length ||
+    close.bootstrapSeed !== true ||
+    close.coverageScope !== "ranked-codes-only" ||
+    close.rankedRowCount !== rows.length ||
+    close.rankedCodeCount !== closeCodes.length ||
+    JSON.stringify(Object.keys(close.baselineCloses)) !== JSON.stringify(["2026-07-08"]) ||
+    Object.keys(close.baselineCloses["2026-07-08"] || {}).length !== 0 ||
+    JSON.stringify(rankedCodes) !== JSON.stringify(closeCodes)
+  ) {
+    throw new Error(`Bootstrap seed ${date} does not exactly cover its ranked codes.`);
+  }
+  if (
+    !Number.isInteger(meta.stockCount) ||
+    meta.stockCount <= 0 ||
+    !Number.isInteger(meta.exactCloseCount) ||
+    meta.exactCloseCount < closeCodes.length ||
+    meta.exactCloseCount > meta.stockCount ||
+    !Number.isInteger(meta.failureCount) ||
+    meta.failureCount < 0 ||
+    meta.failureCount > meta.stockCount
+  ) {
+    throw new Error(`Bootstrap seed ${date} has inconsistent original coverage metadata.`);
   }
 }
 
@@ -336,6 +416,7 @@ function validateExistingIndex(index) {
       !isDate(entry.date) ||
       !["live", "backfill"].includes(entry.source) ||
       entry.status !== "ready" ||
+      (entry.bootstrapSeed !== undefined && typeof entry.bootstrapSeed !== "boolean") ||
       (entry.publishedAt !== undefined && typeof entry.publishedAt !== "string") ||
       (entry.revision !== undefined && !isRevision(entry.revision)) ||
       (entry.snapshotKey !== undefined && !isPayloadKey(entry.snapshotKey, "history-snapshot:", entry.date)) ||
@@ -352,10 +433,15 @@ function validateExistingIndex(index) {
   };
 }
 
-async function enforceLiveStockCountStability(kv, existingIndex, artifacts, force) {
+async function enforceLiveStockCountStability(kv, existingIndex, artifacts, force, bootstrapSeedMode = false) {
   if (force) return;
   const liveCandidates = artifacts
-    .filter((artifact) => artifact.source === "live" && shouldPublishDate(existingIndex.entries, artifact.date, false))
+    .filter((artifact) => artifact.source === "live" && shouldPublishDate(
+      existingIndex.entries,
+      artifact.date,
+      false,
+      { replaceBootstrap: !bootstrapSeedMode }
+    ))
     .sort((left, right) => left.date.localeCompare(right.date));
 
   for (const artifact of liveCandidates) {

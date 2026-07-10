@@ -1,5 +1,13 @@
-export function shouldPublishDate(entries, date, force) {
-  return force || !entries.some((entry) => entry.date === date && entry.status === "ready");
+export function shouldPublishDate(entries, date, force, { replaceBootstrap = false } = {}) {
+  if (force) return true;
+  const existing = entries.find((entry) => entry.date === date && entry.status === "ready");
+  return !existing || (replaceBootstrap && existing.bootstrapSeed === true);
+}
+
+export function needsFullHistoryBootstrap(entries, historyStart = "2026-07-08") {
+  const startReady = entries.some((entry) => entry?.date === historyStart && entry?.status === "ready");
+  const seedRemains = entries.some((entry) => entry?.bootstrapSeed === true);
+  return !startReady || seedRemains;
 }
 
 export function mergeHistoryIndex(existingIndex, tradingDates, updates, updatedAt) {

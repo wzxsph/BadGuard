@@ -5,6 +5,7 @@ import {
   assertStableStockCount,
   isImmutablePayloadPointer,
   mergeHistoryIndex,
+  needsFullHistoryBootstrap,
   selectLatestLiveArtifact,
   shouldPublishDate
 } from "../../scripts/history_index.mjs";
@@ -28,6 +29,29 @@ test("same-day publication is skipped unless force is explicit", () => {
   expect(shouldPublishDate(existing.entries, "2026-07-08", false)).toBe(false);
   expect(shouldPublishDate(existing.entries, "2026-07-08", true)).toBe(true);
   expect(shouldPublishDate(existing.entries, "2026-07-09", false)).toBe(true);
+});
+
+test("a repository seed is replaceable by a later complete artifact without replacing normal same-day data", () => {
+  const seed = [{
+    date: "2026-07-09",
+    source: "live",
+    status: "ready",
+    bootstrapSeed: true
+  }];
+
+  expect(shouldPublishDate(seed, "2026-07-09", false)).toBe(false);
+  expect(shouldPublishDate(seed, "2026-07-09", false, { replaceBootstrap: true })).toBe(true);
+  expect(shouldPublishDate(existing.entries, "2026-07-08", false, { replaceBootstrap: true })).toBe(false);
+});
+
+test("full bootstrap remains required until 7/8 exists and repository seeds are replaced", () => {
+  expect(needsFullHistoryBootstrap([])).toBe(true);
+  expect(needsFullHistoryBootstrap([{ date: "2026-07-09", status: "ready", bootstrapSeed: true }])).toBe(true);
+  expect(needsFullHistoryBootstrap([{ date: "2026-07-08", status: "ready" }])).toBe(false);
+  expect(needsFullHistoryBootstrap([
+    { date: "2026-07-08", status: "ready" },
+    { date: "2026-07-09", status: "ready", bootstrapSeed: true }
+  ])).toBe(true);
 });
 
 test("forced update replaces a date without duplicating the index", () => {

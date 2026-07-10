@@ -15,6 +15,10 @@ on:
         description: Overwrite an existing production snapshot for the same market date.
         required: true
         default: "false"
+      bootstrap_seed:
+        description: Quickly seed verified bundled 2026-07-09 history without calling AkShare.
+        required: true
+        default: "false"
       backfill_start:
         description: Optional first exchange date to backfill, for example 20260708.
         required: false
@@ -33,10 +37,125 @@ concurrency:
   group: refresh-akshare-signals
   cancel-in-progress: false
 
+env:
+  SHARD_COUNT: "8"
+  PYTHONUNBUFFERED: "1"
+
 jobs:
-  refresh:
+  bootstrap_seed:
+    name: Publish verified repository seed
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.bootstrap_seed == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require explicit production authorization
+        env:
+          PUBLISH_PRODUCTION: ${{ github.event.inputs.publish_production }}
+        run: |
+          if [ "$PUBLISH_PRODUCTION" != "true" ]; then
+            echo "bootstrap_seed requires publish_production=true" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build and validate repository seed
+        run: |
+          node scripts/build_history_seed.mjs \
+            --input data/latest.json \
+            --artifact-dir data/publish \
+            --calendar data/trading-calendar.json
+          node scripts/publish_history.mjs \
+            --manifest data/publish/manifest.json \
+            --calendar data/trading-calendar.json \
+            --bootstrap-seed \
+            --validate-only
+
+      - name: Archive verified seed before publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: badguard-bootstrap-seed-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            data/publish/manifest.json
+            data/publish/history-snapshot-*.json
+            data/publish/market-close-*.json
+            data/trading-calendar.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Resolve Cloudflare namespace
+        run: |
+          KV_NAMESPACE_ID="$(node --input-type=module <<'JS'
+          import fs from 'node:fs';
+
+          const toml = fs.readFileSync('wrangler.toml', 'utf8');
+          const match = toml.match(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"SIGNAL_KV"[\s\S]*?id\s*=\s*"([^"]+)"/);
+          if (!match) throw new Error('SIGNAL_KV id not found in wrangler.toml');
+          console.log(match[1]);
+          JS
+          )"
+          echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
+
+      - name: Publish repository seed atomically
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISH_PRODUCTION: "true"
+        run: |
+          node scripts/publish_history.mjs \
+            --manifest data/publish/manifest.json \
+            --calendar data/trading-calendar.json \
+            --bootstrap-seed
+
+      - name: Verify seed list and detail APIs
+        run: |
+          node --input-type=module <<'JS'
+          const baseUrl = 'https://badguard.nizabentley397.workers.dev';
+          let lastStatus = 'not requested';
+          for (let attempt = 1; attempt <= 6; attempt += 1) {
+            const [listResponse, detailResponse] = await Promise.all([
+              fetch(`${baseUrl}/api/history`),
+              fetch(`${baseUrl}/api/history/2026-07-09`)
+            ]).catch((error) => {
+              lastStatus = error.message;
+              return [];
+            });
+            if (listResponse?.ok && detailResponse?.ok) {
+              const list = await listResponse.json();
+              const detail = await detailResponse.json();
+              const entry = list?.dates?.find((item) => item.date === '2026-07-09');
+              if (
+                entry?.status === 'ready'
+                && entry.source === 'live'
+                && typeof entry.snapshotKey === 'string'
+                && typeof entry.closeKey === 'string'
+                && detail?.date === '2026-07-09'
+              ) {
+                console.log(JSON.stringify({ entry, detailDate: detail.date }, null, 2));
+                process.exit(0);
+              }
+              lastStatus = 'seed entry/detail not visible yet';
+            } else {
+              lastStatus = `${listResponse?.status ?? lastStatus}/${detailResponse?.status ?? lastStatus}`;
+            }
+            await new Promise((resolve) => setTimeout(resolve, attempt * 3000));
+          }
+          throw new Error(`Bootstrap seed API check failed: ${lastStatus}`);
+          JS
+
+  prepare:
+    name: Prepare stable universe
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.bootstrap_seed != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      context_hash: ${{ steps.prepare.outputs.context_hash }}
+      market_date: ${{ steps.prepare.outputs.market_date }}
 
     steps:
       - uses: actions/checkout@v4
@@ -52,13 +171,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
 
       - name: Install Python dependencies
         run: uv sync --locked
-
-      - name: Install Worker dependencies
-        run: npm ci
 
       - name: Prepare prior history codes
         env:
@@ -76,10 +191,10 @@ jobs:
           JS
           )"
           export KV_NAMESPACE_ID
-          echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
           node scripts/fetch_required_history_codes.mjs data/required-history-codes.json
 
-      - name: Build AkShare signal snapshot
+      - name: Freeze dates and stock universe
+        id: prepare
         env:
           PUBLISH_PRODUCTION: ${{ github.event_name == 'schedule' || github.event.inputs.publish_production == 'true' }}
           BACKFILL_START: ${{ github.event.inputs.backfill_start }}
@@ -91,14 +206,11 @@ jobs:
           fi
 
           BUILD_MODE=staging
-          if [ "$PUBLISH_PRODUCTION" = "true" ]; then
-            BUILD_MODE=production
-          fi
-
           UNIVERSE_SOURCE=realtime
           SNAPSHOT_SOURCE=live
           EXTRA_ARGS=()
           if [ "$PUBLISH_PRODUCTION" = "true" ]; then
+            BUILD_MODE=production
             UNIVERSE_SOURCE=code-list
             SCAN_LIMIT=0
           fi
@@ -117,20 +229,158 @@ jobs:
             EXTRA_ARGS+=(--backfill-start 20260708 --include-live-target)
           fi
 
-          uv run python scripts/build_akshare_snapshot.py \
-            --output data/latest.json \
-            --close-output data/market-close.json \
+          uv run python scripts/prepare_akshare_context.py \
+            --output data/run-context.json \
             --calendar-output data/trading-calendar.json \
-            --artifact-dir data/publish \
             --required-codes data/required-history-codes.json \
             --universe-source "$UNIVERSE_SOURCE" \
             --history-source eastmoney \
             --limit "$SCAN_LIMIT" \
-            --max-workers 8 \
-            --sleep 0.02 \
+            --max-workers 1 \
+            --skip-industry-map \
+            --sleep 0.08 \
+            --request-timeout 12 \
+            --request-attempts 2 \
+            --max-consecutive-failures 12 \
+            --soft-deadline-minutes 60 \
             --build-mode "$BUILD_MODE" \
             --snapshot-source "$SNAPSHOT_SOURCE" \
+            --shard-count "$SHARD_COUNT" \
             "${EXTRA_ARGS[@]}"
+          node --input-type=module <<'JS'
+          import fs from 'node:fs/promises';
+
+          const context = JSON.parse(await fs.readFile('data/run-context.json', 'utf8'));
+          await fs.appendFile(process.env.GITHUB_OUTPUT, `context_hash=${context.contextHash}\n`);
+          await fs.appendFile(process.env.GITHUB_OUTPUT, `market_date=${context.targets.at(-1)}\n`);
+          console.log(JSON.stringify({
+            contextHash: context.contextHash,
+            stockCount: context.stockCount,
+            targets: context.targets,
+            shardCount: context.shardCount
+          }, null, 2));
+          JS
+
+      - name: Upload immutable run context
+        uses: actions/upload-artifact@v4
+        with:
+          name: badguard-context-${{ github.run_id }}
+          path: |
+            data/run-context.json
+            data/trading-calendar.json
+            data/required-history-codes.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  fetch:
+    name: Fetch shard ${{ matrix.shard }} of 8
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Download immutable run context
+        uses: actions/download-artifact@v4
+        with:
+          name: badguard-context-${{ github.run_id }}
+          path: data/context
+
+      - name: Restore this shard's completed histories
+        uses: actions/cache@v4
+        with:
+          path: .cache/akshare-history/${{ matrix.shard }}
+          key: badguard-akshare-v1-${{ needs.prepare.outputs.context_hash }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            badguard-akshare-v1-${{ needs.prepare.outputs.context_hash }}-${{ matrix.shard }}-
+
+      - name: Fetch and evaluate shard
+        run: |
+          mkdir -p data/shards
+          uv run python scripts/build_akshare_shard.py \
+            --context data/context/run-context.json \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count "$SHARD_COUNT" \
+            --history-cache-dir ".cache/akshare-history/${{ matrix.shard }}" \
+            --heartbeat-seconds 30 \
+            --output "data/shards/shard-${{ matrix.shard }}.json"
+
+      - name: Upload shard checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: badguard-shard-${{ github.run_id }}-${{ matrix.shard }}
+          path: data/shards/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  merge_publish:
+    name: Validate, merge, and publish atomically
+    needs: [prepare, fetch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          uv sync --locked
+          npm ci
+
+      - name: Download immutable run context
+        uses: actions/download-artifact@v4
+        with:
+          name: badguard-context-${{ github.run_id }}
+          path: data/context
+
+      - name: Download all shard checkpoints
+        uses: actions/download-artifact@v4
+        with:
+          pattern: badguard-shard-${{ github.run_id }}-*
+          path: data/shards
+          merge-multiple: true
+
+      - name: Merge shards and enforce global completeness
+        run: |
+          uv run python scripts/merge_akshare_shards.py \
+            --context data/context/run-context.json \
+            --shard-dir data/shards \
+            --output data/latest.json \
+            --close-output data/market-close.json \
+            --calendar-output data/trading-calendar.json \
+            --artifact-dir data/publish
 
       - name: Validate history artifacts
         run: |
@@ -153,27 +403,35 @@ jobs:
           await fs.appendFile(process.env.GITHUB_ENV, `MARKET_DATE=${marketDate}\n`);
           await fs.appendFile(process.env.GITHUB_ENV, `ARTIFACT_DATES=${dates.join(',')}\n`);
           await fs.appendFile(process.env.GITHUB_ENV, `LIVE_ARTIFACT_DATE=${liveDate}\n`);
-          await fs.appendFile(process.env.GITHUB_ENV, `SNAPSHOT_SOURCE=${manifest.source}\n`);
-
-          console.log(JSON.stringify({
-            marketDate,
-            dates,
-            liveDate,
-            source: manifest.source
-          }, null, 2));
+          console.log(JSON.stringify({ marketDate, dates, liveDate, contextHash: manifest.contextHash }, null, 2));
           JS
 
-      - name: Archive validated history artifacts
+      - name: Archive validated source and history artifacts
         uses: actions/upload-artifact@v4
         with:
           name: badguard-history-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            data/context/run-context.json
+            data/shards/shard-*.json
             data/publish/manifest.json
             data/publish/history-snapshot-*.json
             data/publish/market-close-*.json
             data/trading-calendar.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Resolve Cloudflare namespace
+        run: |
+          KV_NAMESPACE_ID="$(node --input-type=module <<'JS'
+          import fs from 'node:fs';
+
+          const toml = fs.readFileSync('wrangler.toml', 'utf8');
+          const match = toml.match(/\[\[kv_namespaces\]\][\s\S]*?binding\s*=\s*"SIGNAL_KV"[\s\S]*?id\s*=\s*"([^"]+)"/);
+          if (!match) throw new Error('SIGNAL_KV id not found in wrangler.toml');
+          console.log(match[1]);
+          JS
+          )"
+          echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
 
       - name: Upload snapshot to Workers KV
         env:
@@ -198,40 +456,44 @@ jobs:
           node --input-type=module <<'JS'
           const baseUrl = 'https://badguard.nizabentley397.workers.dev';
           const expectedDates = process.env.ARTIFACT_DATES.split(',').filter(Boolean);
+          const detailDate = expectedDates.at(-1);
           let lastStatus = 'not requested';
 
           for (let attempt = 1; attempt <= 6; attempt += 1) {
-            const [signalsResponse, historyResponse] = await Promise.all([
+            const [signalsResponse, historyResponse, detailResponse] = await Promise.all([
               fetch(`${baseUrl}/api/signals`),
-              fetch(`${baseUrl}/api/history`)
+              fetch(`${baseUrl}/api/history`),
+              fetch(`${baseUrl}/api/history/${detailDate}`)
             ]).catch((error) => {
               lastStatus = error.message;
               return [];
             });
 
-            if (signalsResponse?.ok && historyResponse?.ok) {
+            if (signalsResponse?.ok && historyResponse?.ok && detailResponse?.ok) {
               const snapshot = await signalsResponse.json();
               const history = await historyResponse.json();
-              const rawDates = Array.isArray(history)
-                ? history
-                : history.dates ?? history.entries ?? [];
-              const historyDates = rawDates.map((item) => typeof item === 'string' ? item : item.date);
-              const allVisible = expectedDates.every((date) => historyDates.includes(date));
+              const detail = await detailResponse.json();
+              const entries = Array.isArray(history?.dates) ? history.dates : [];
+              const byDate = new Map(entries.map((entry) => [entry.date, entry]));
+              const allVisible = expectedDates.every((date) => {
+                const entry = byDate.get(date);
+                return entry?.status === 'ready'
+                  && ['live', 'backfill'].includes(entry.source)
+                  && typeof entry.snapshotKey === 'string'
+                  && typeof entry.closeKey === 'string';
+              });
               const latestIsCurrent = !process.env.LIVE_ARTIFACT_DATE || snapshot.marketDate === process.env.LIVE_ARTIFACT_DATE;
-              if (!allVisible || !latestIsCurrent) {
-                lastStatus = `history visible=${allVisible}, latest=${snapshot.marketDate}`;
+              const detailIsCurrent = detail?.date === detailDate && detail?.entry?.status === 'ready';
+              if (!allVisible || !latestIsCurrent || !detailIsCurrent) {
+                lastStatus = `history visible=${allVisible}, latest=${snapshot.marketDate}, detail=${detail?.date}`;
                 await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
                 continue;
               }
-              console.log(JSON.stringify({
-                marketDate: snapshot.marketDate,
-                expectedDates,
-                historyDates
-              }, null, 2));
+              console.log(JSON.stringify({ marketDate: snapshot.marketDate, expectedDates, detailDate, entries }, null, 2));
               process.exit(0);
             }
 
-            lastStatus = `${signalsResponse?.status ?? lastStatus}/${historyResponse?.status ?? lastStatus}`;
+            lastStatus = `${signalsResponse?.status ?? lastStatus}/${historyResponse?.status ?? lastStatus}/${detailResponse?.status ?? lastStatus}`;
             await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
           }
 

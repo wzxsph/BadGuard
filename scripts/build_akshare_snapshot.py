@@ -145,7 +145,17 @@ def main() -> None:
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
         futures = {
-            executor.submit(fetch_stock_history, stock, start_date, end_date, args.adjust, args.history_source, args.sleep): stock
+            executor.submit(
+                fetch_stock_history,
+                stock,
+                start_date,
+                end_date,
+                args.adjust,
+                args.history_source,
+                args.sleep,
+                args.request_timeout,
+                args.request_attempts,
+            ): stock
             for stock in stocks
         }
 
@@ -314,6 +324,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--per-board", type=int, default=DEFAULT_PER_BOARD, help="Maximum rows retained per board; 0 keeps all rows.")
     parser.add_argument("--max-workers", type=int, default=4, help="Concurrent AkShare history requests.")
     parser.add_argument("--sleep", type=float, default=0.05, help="Seconds to sleep after each stock request.")
+    parser.add_argument("--request-timeout", type=float, default=20.0, help="Per-request provider timeout in seconds.")
+    parser.add_argument("--request-attempts", type=int, default=3, help="Attempts per history provider.")
     parser.add_argument("--adjust", default="qfq", choices=["", "qfq", "hfq"], help="AkShare adjustment mode.")
     parser.add_argument("--include-st", action="store_true", help="Include ST and delisting-risk names.")
     parser.add_argument("--universe-source", default="code-list", choices=["code-list", "realtime"], help="Use daily code list by default; realtime may depend on Eastmoney availability.")
@@ -609,8 +621,20 @@ def fetch_stock_history(
     adjust: str,
     history_source: str,
     sleep_seconds: float,
+    request_timeout: float = 20.0,
+    request_attempts: int = 3,
+    allow_provider_fallback: bool = True,
 ) -> StockHistory:
-    bars, provider = fetch_history(stock, start_date, end_date, adjust, history_source)
+    bars, provider = fetch_history(
+        stock,
+        start_date,
+        end_date,
+        adjust,
+        history_source,
+        request_timeout,
+        request_attempts,
+        allow_provider_fallback,
+    )
     time.sleep(sleep_seconds)
     return StockHistory(stock=stock, bars=bars, provider=provider)
 
@@ -621,11 +645,26 @@ def fetch_history(
     end_date: str,
     adjust: str,
     history_source: str,
+    request_timeout: float = 20.0,
+    request_attempts: int = 3,
+    allow_provider_fallback: bool = True,
 ) -> tuple[pd.DataFrame, str]:
     if history_source == "eastmoney":
-        providers = [("eastmoney", fetch_eastmoney_history), ("sina", fetch_sina_history)]
+        providers = [
+            ("eastmoney", lambda code, start, end, mode: fetch_eastmoney_history(
+                code, start, end, mode, request_timeout, request_attempts
+            )),
+            ("sina", fetch_sina_history),
+        ]
     else:
-        providers = [("sina", fetch_sina_history), ("eastmoney", fetch_eastmoney_history)]
+        providers = [
+            ("sina", fetch_sina_history),
+            ("eastmoney", lambda code, start, end, mode: fetch_eastmoney_history(
+                code, start, end, mode, request_timeout, request_attempts
+            )),
+        ]
+    if not allow_provider_fallback:
+        providers = providers[:1]
 
     errors: list[str] = []
     for provider, fetcher in providers:
@@ -651,7 +690,14 @@ def fetch_sina_history(code: str, start_date: str, end_date: str, adjust: str) -
     )
 
 
-def fetch_eastmoney_history(code: str, start_date: str, end_date: str, adjust: str) -> pd.DataFrame:
+def fetch_eastmoney_history(
+    code: str,
+    start_date: str,
+    end_date: str,
+    adjust: str,
+    request_timeout: float = 20.0,
+    request_attempts: int = 3,
+) -> pd.DataFrame:
     return call_with_retry(
         lambda: ak.stock_zh_a_hist(
             symbol=code,
@@ -659,8 +705,10 @@ def fetch_eastmoney_history(code: str, start_date: str, end_date: str, adjust: s
             start_date=start_date,
             end_date=end_date,
             adjust=adjust,
+            timeout=request_timeout,
         ),
         f"stock_zh_a_hist:{code}",
+        attempts=request_attempts,
     )
 
 

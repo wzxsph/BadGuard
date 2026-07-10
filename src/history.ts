@@ -13,6 +13,8 @@ export interface HistoryIndexEntry {
   date: string;
   source: HistorySource;
   status: "ready";
+  /** Temporary repository recovery record; replaced by a complete shard bundle. */
+  bootstrapSeed?: boolean;
   publishedAt?: string;
   /** Optional immutable payload pointer used for atomic force-publish. */
   snapshotKey?: string;
@@ -633,6 +635,7 @@ function validateHistoryEntry(entry: HistoryIndexEntry): void {
     !isValidHistoryDate(entry.date) ||
     (entry.source !== "live" && entry.source !== "backfill") ||
     entry.status !== "ready" ||
+    (entry.bootstrapSeed !== undefined && typeof entry.bootstrapSeed !== "boolean") ||
     (entry.publishedAt !== undefined && typeof entry.publishedAt !== "string") ||
     (entry.snapshotKey !== undefined && !isSafePayloadKey(entry.snapshotKey, HISTORY_SNAPSHOT_PREFIX, entry.date)) ||
     (entry.closeKey !== undefined && !isSafePayloadKey(entry.closeKey, MARKET_CLOSE_PREFIX, entry.date)) ||

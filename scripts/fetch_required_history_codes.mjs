@@ -2,6 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { needsFullHistoryBootstrap } from "./history_index.mjs";
 
 const output = process.argv[2] || "data/required-history-codes.json";
 const production = process.env.PUBLISH_PRODUCTION === "true";
@@ -23,7 +24,6 @@ if (!indexText) {
   await writeCodes([]);
   process.exit(0);
 }
-await setBootstrapRequired(false);
 
 const index = JSON.parse(indexText);
 if (!Array.isArray(index.entries)) {
@@ -34,6 +34,7 @@ const entries = index.entries
   .filter((entry) => entry?.status === "ready" && typeof entry.date === "string")
   .sort((left, right) => right.date.localeCompare(left.date))
   .slice(0, 2);
+await setBootstrapRequired(needsFullHistoryBootstrap(index.entries));
 const codes = new Set();
 
 for (const entry of entries) {

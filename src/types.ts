@@ -133,6 +133,9 @@ export interface SnapshotMeta {
   exactCloseCount?: number;
   exactCloseCoverage?: number;
   perBoardLimit?: number;
+  shardCount?: number;
+  historyCacheHitCount?: number;
+  runContextHash?: string;
   snapshotSource?: "live" | "backfill";
   requiredHistoryCodeCount?: number;
 }
