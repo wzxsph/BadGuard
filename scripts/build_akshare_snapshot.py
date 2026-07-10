@@ -36,6 +36,7 @@ HIGH_TURNOVER_RATE = 20.0
 MIN_DATA_COVERAGE = 0.90
 DEFAULT_PER_BOARD = 0
 MAX_INDUSTRY_WORKERS = 8
+MIN_PRODUCTION_STOCK_COUNT = 5_000
 EASTMONEY_CLIST_URL = "https://82.push2.eastmoney.com/api/qt/clist/get"
 EASTMONEY_A_SHARE_FS = "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
 EASTMONEY_USER_AGENT = (
@@ -133,6 +134,7 @@ def main() -> None:
         actual_universe_source,
         args.limit,
         args.per_board,
+        len(stocks),
     )
     print(
         f"Loaded {len(stocks)} stocks ({len(required_codes)} required history codes); "
@@ -367,12 +369,17 @@ def validate_production_universe(
     actual_source: str,
     limit: int,
     per_board: int = DEFAULT_PER_BOARD,
+    stock_count: int | None = None,
 ) -> None:
     if build_mode != "production":
         return
     if requested_source != "code-list" or actual_source != "code-list" or limit != 0 or per_board != 0:
         raise SystemExit(
             "Production generation requires the complete stable code-list universe and full boards (--universe-source code-list --limit 0 --per-board 0)."
+        )
+    if stock_count is not None and stock_count < MIN_PRODUCTION_STOCK_COUNT:
+        raise SystemExit(
+            f"Production code-list contains only {stock_count} stocks; at least {MIN_PRODUCTION_STOCK_COUNT} are required."
         )
 
 
@@ -510,7 +517,8 @@ def load_stock_universe(
                 raise RuntimeError(f"Unable to load realtime or code-list universe: {exc}") from exc
             print(f"AkShare code-list universe unavailable, trying Eastmoney direct clist: {exc}")
             spot_df = load_eastmoney_realtime_table(limit)
-            actual_source = "realtime"
+            assert_complete_code_list_frame(spot_df, "Eastmoney direct clist")
+            actual_source = "code-list"
 
     required_columns = {"代码", "名称"}
     missing = required_columns - set(spot_df.columns)
@@ -560,6 +568,24 @@ def load_stock_universe(
         for _, row in spot_df.iterrows()
     ]
     return stocks, actual_source
+
+
+def assert_complete_code_list_frame(
+    frame: pd.DataFrame,
+    label: str,
+    minimum_count: int = MIN_PRODUCTION_STOCK_COUNT,
+) -> None:
+    if not {"代码", "名称"}.issubset(frame.columns):
+        raise RuntimeError(f"{label} is missing code/name columns")
+    codes = frame["代码"].astype(str).str.zfill(6)
+    raw_names = frame["名称"]
+    names = raw_names.astype(str).str.strip()
+    valid_codes = codes.str.fullmatch(r"\d{6}", na=False)
+    unique_count = codes[valid_codes].nunique()
+    if unique_count < minimum_count or raw_names.isna().any() or names.eq("").any():
+        raise RuntimeError(
+            f"{label} returned only {unique_count} unique valid codes; at least {minimum_count} are required"
+        )
 
 
 def load_code_name_table() -> pd.DataFrame:

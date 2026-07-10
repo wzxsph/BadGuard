@@ -140,6 +140,7 @@ def prepare_context(args: argparse.Namespace, now: datetime | None = None) -> di
         actual_universe_source,
         args.limit,
         args.per_board,
+        len(stocks),
     )
     stocks = sorted(stocks, key=lambda stock: stock.code)
     assert_unique_stock_codes(stocks)

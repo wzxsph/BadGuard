@@ -17,6 +17,7 @@ from scripts.build_akshare_snapshot import (
     StockItem,
     append_candidate,
     assemble_snapshot,
+    assert_complete_code_list_frame,
     build_baseline_closes,
     calendar_publication_dates,
     coverage_rate,
@@ -281,7 +282,7 @@ class CompletenessAndStorageTests(unittest.TestCase):
             assemble_snapshot(rows, -1, "test", {}, "2026-07-08")
 
     def test_production_requires_full_stable_code_list(self) -> None:
-        validate_production_universe("production", "code-list", "code-list", 0)
+        validate_production_universe("production", "code-list", "code-list", 0, stock_count=5_000)
         validate_production_universe("staging", "realtime", "realtime", 100)
         for requested, actual, limit in [
             ("realtime", "realtime", 0),
@@ -292,6 +293,24 @@ class CompletenessAndStorageTests(unittest.TestCase):
                 validate_production_universe("production", requested, actual, limit)
         with self.assertRaises(SystemExit):
             validate_production_universe("production", "code-list", "code-list", 0, per_board=80)
+        with self.assertRaises(SystemExit):
+            validate_production_universe("production", "code-list", "code-list", 0, stock_count=4_999)
+
+    def test_complete_fallback_code_list_requires_unique_valid_codes(self) -> None:
+        complete = pd.DataFrame({
+            "代码": [f"{index:06d}" for index in range(5)],
+            "名称": [f"股票{index}" for index in range(5)],
+        })
+        assert_complete_code_list_frame(complete, "fixture", minimum_count=5)
+
+        with self.assertRaises(RuntimeError):
+            assert_complete_code_list_frame(complete.iloc[:4], "fixture", minimum_count=5)
+        with self.assertRaises(RuntimeError):
+            assert_complete_code_list_frame(
+                pd.concat([complete.iloc[:4], complete.iloc[[0]]], ignore_index=True),
+                "fixture",
+                minimum_count=5,
+            )
 
     def test_industry_enrichment_is_bounded_unique_and_deterministic(self) -> None:
         rows = [
