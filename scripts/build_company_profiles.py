@@ -96,8 +96,20 @@ def main() -> None:
         profile = {**make_base_profile(row, updated_at), **profiles.get(code, {})}
 
         if ak is not None:
-            fetched_profile = fetch_cninfo_profile(ak, code)
-            business_segments = fetch_business_segments(ak, code)
+            fetched_profile = fetch_cninfo_profile(
+                ak,
+                code,
+                max_attempts=args.fetch_retries,
+                initial_delay=args.fetch_retry_initial_delay,
+                backoff=args.fetch_retry_backoff
+            )
+            business_segments = fetch_business_segments(
+                ak,
+                code,
+                max_attempts=args.fetch_retries,
+                initial_delay=args.fetch_retry_initial_delay,
+                backoff=args.fetch_retry_backoff
+            )
 
             if fetched_profile:
                 profile.update(fetched_profile)
@@ -129,6 +141,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fetch-akshare", action="store_true", help="Fetch F10-like fields with AkShare.")
     parser.add_argument("--limit", type=int, default=0, help="Limit profiles for a quick smoke test; 0 means all signal stocks.")
     parser.add_argument("--sleep", type=float, default=0.15, help="Seconds to sleep between AkShare profile requests.")
+    parser.add_argument("--fetch-retries", type=int, default=3, help="Attempts per AkShare profile endpoint.")
+    parser.add_argument("--fetch-retry-initial-delay", type=float, default=0.5, help="Initial delay before the first retry.")
+    parser.add_argument("--fetch-retry-backoff", type=float, default=1.8, help="Delay multiplier for retry backoff.")
     return parser.parse_args()
 
 
@@ -196,11 +211,19 @@ def make_base_profile(row: dict[str, Any], updated_at: str) -> dict[str, Any]:
     }
 
 
-def fetch_cninfo_profile(ak: Any, code: str) -> dict[str, Any]:
-    try:
-        frame = ak.stock_profile_cninfo(symbol=code)
-    except Exception as exc:  # pragma: no cover - provider variability
-        print(f"Skipped CNInfo profile for {code}: {exc}")
+def fetch_cninfo_profile(
+    ak: Any,
+    code: str,
+    *,
+    max_attempts: int,
+    initial_delay: float,
+    backoff: float
+) -> dict[str, Any]:
+    def _fetch() -> Any:
+        return ak.stock_profile_cninfo(symbol=code)
+
+    frame = with_retries("CNInfo profile", code, _fetch, max_attempts, initial_delay, backoff)
+    if frame is None:
         return {}
 
     if frame is None or frame.empty:
@@ -220,11 +243,19 @@ def fetch_cninfo_profile(ak: Any, code: str) -> dict[str, Any]:
     return profile
 
 
-def fetch_business_segments(ak: Any, code: str) -> list[dict[str, Any]]:
-    try:
-        frame = ak.stock_zygc_em(symbol=market_symbol(code))
-    except Exception as exc:  # pragma: no cover - provider variability
-        print(f"Skipped business segments for {code}: {exc}")
+def fetch_business_segments(
+    ak: Any,
+    code: str,
+    *,
+    max_attempts: int,
+    initial_delay: float,
+    backoff: float
+) -> list[dict[str, Any]]:
+    def _fetch() -> Any:
+        return ak.stock_zygc_em(symbol=market_symbol(code))
+
+    frame = with_retries("business-segments", code, _fetch, max_attempts, initial_delay, backoff)
+    if frame is None:
         return []
 
     if frame is None or frame.empty:
@@ -268,6 +299,22 @@ def fetch_business_segments(ak: Any, code: str) -> list[dict[str, Any]]:
             break
 
     return segments
+
+
+def with_retries(label: str, code: str, callback: Any, max_attempts: int, initial_delay: float, backoff: float) -> Any:
+    attempt = 1
+    while attempt <= max_attempts:
+        try:
+            return callback()
+        except Exception as exc:  # pragma: no cover - provider variability
+            if attempt >= max_attempts:
+                print(f"Skipped {label} for {code} after {attempt} attempts: {exc}")
+                return None
+            delay = initial_delay * (backoff ** (attempt - 1))
+            print(f"Retry {label} for {code}, attempt {attempt}/{max_attempts} in {delay:.2f}s: {exc}")
+            time.sleep(delay)
+            attempt += 1
+    return None
 
 
 def normalize_profile(profile: dict[str, Any]) -> dict[str, Any]:
