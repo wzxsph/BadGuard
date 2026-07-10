@@ -4,6 +4,7 @@ export interface HistoryPageEntry {
   date: string;
   source: "live" | "backfill";
   status: "ready";
+  bootstrapSeed?: boolean;
   publishedAt?: string;
 }
 
@@ -27,6 +28,7 @@ export interface HistoryPageBoard extends Omit<SignalBoard, "rows"> {
 export interface HistoryPageDetail {
   date: string;
   source: "live" | "backfill";
+  entry: HistoryPageEntry;
   snapshot: Omit<SignalSnapshot, "boards" | "topRows"> & {
     boards: HistoryPageBoard[];
     topRows: HistoryPageRow[];
@@ -75,7 +77,7 @@ export function renderHistoryHtml(
           <p class="eyebrow">按交易日查看</p>
           <h2 id="history-date-title">选择一张旧纸条</h2>
         </div>
-        <p class="source-caption" data-history-source>${detail ? sourceLabel(detail.source) : ""}</p>
+        <p class="source-caption" data-history-source>${detail ? sourceLabel(detail.source, detail.entry.bootstrapSeed) : ""}</p>
       </div>
       ${renderDateStrip(readyEntries, activeDate)}
     </section>
@@ -129,7 +131,7 @@ function renderDateStrip(entries: HistoryPageEntry[], activeDate: string): strin
   return `<div class="date-strip" data-history-dates aria-label="历史交易日">
     ${entries.map((entry) => `<button type="button" class="date-chip" data-history-date="${entry.date}"${entry.date === activeDate ? ' aria-current="date"' : ""}>
       <span>${escapeHtml(formatShortDate(entry.date))}</span>
-      <small>${sourceLabel(entry.source)}</small>
+      <small>${sourceLabel(entry.source, entry.bootstrapSeed)}</small>
     </button>`).join("")}
   </div>`;
 }
@@ -198,7 +200,8 @@ function boardTitle(board: Pick<SignalBoard, "id" | "title">): string {
   return BOARD_LABELS.find((item) => item.id === board.id)?.title || board.title;
 }
 
-function sourceLabel(source: HistoryPageEntry["source"]): string {
+function sourceLabel(source: HistoryPageEntry["source"], bootstrapSeed = false): string {
+  if (bootstrapSeed) return "仓库恢复";
   return source === "backfill" ? "回溯生成" : "实时留存";
 }
 
@@ -363,7 +366,7 @@ const HISTORY_JS = `
   const cap = (value) => Number.isFinite(value) ? number(value / 1e8) + "亿" : "暂无数据";
   const turnover = (value) => Number.isFinite(value) ? number(value) + "%" : "暂无数据";
   const boardName = (id) => ({"low-rebound":"低位反弹","trend-strength":"趋势转强","oversold-repair":"超跌修复","risk-filter":"风险过滤"}[id] || id);
-  const sourceName = (source) => source === "backfill" ? "回溯生成" : "实时留存";
+  const sourceName = (source, bootstrapSeed = false) => bootstrapSeed ? "仓库恢复" : source === "backfill" ? "回溯生成" : "实时留存";
 
   function returnHtml(label, result) {
     const date = result?.tradingDate ? esc(result.tradingDate) : "对应交易日未到";
@@ -423,7 +426,7 @@ const HISTORY_JS = `
     if (!boards.some((board) => board.id === activeBoard)) activeBoard = boards[0]?.id || "low-rebound";
     panelsNode.innerHTML = boards.map(panelHtml).join("");
     titleNode.textContent = detail.date + " 榜单";
-    sourceNode.textContent = sourceName(detail.source);
+    sourceNode.textContent = sourceName(detail.source, detail.entry?.bootstrapSeed === true);
     document.querySelectorAll("[data-history-date]").forEach((button) => {
       if (button.dataset.historyDate === detail.date) button.setAttribute("aria-current", "date");
       else button.removeAttribute("aria-current");

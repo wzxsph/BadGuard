@@ -570,6 +570,7 @@ function parseHistoryEntry(raw: unknown): HistoryIndexEntry {
     typeof raw.date !== "string" ||
     (raw.source !== "live" && raw.source !== "backfill") ||
     raw.status !== "ready" ||
+    (raw.bootstrapSeed !== undefined && typeof raw.bootstrapSeed !== "boolean") ||
     (raw.publishedAt !== undefined && typeof raw.publishedAt !== "string") ||
     (raw.snapshotKey !== undefined && typeof raw.snapshotKey !== "string") ||
     (raw.closeKey !== undefined && typeof raw.closeKey !== "string") ||
@@ -583,6 +584,9 @@ function parseHistoryEntry(raw: unknown): HistoryIndexEntry {
     source: raw.source,
     status: "ready"
   };
+  if (raw.bootstrapSeed === true) {
+    entry.bootstrapSeed = true;
+  }
   if (typeof raw.publishedAt === "string") {
     entry.publishedAt = raw.publishedAt;
   }

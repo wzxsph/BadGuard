@@ -59,6 +59,15 @@ describe("history page rendering", () => {
     expect(errorHtml).toContain('role="alert"');
     expect(errorHtml).toContain("历史存储暂时不可用");
   });
+
+  it("labels a temporary repository seed distinctly from a live retention", () => {
+    const detail = makeDetail([], true);
+    const html = renderHistoryHtml([
+      { date: "2026-07-09", source: "live", status: "ready", bootstrapSeed: true }
+    ], detail);
+
+    expect(html).toContain("仓库恢复");
+  });
 });
 
 describe("history worker routes", () => {
@@ -80,7 +89,7 @@ describe("history worker routes", () => {
       version: 1,
       tradingDates: ["2026-07-08", "2026-07-09"],
       entries: [
-        { date: "2026-07-09", source: "live", status: "ready" },
+        { date: "2026-07-09", source: "live", status: "ready", bootstrapSeed: true },
         { date: "2026-07-08", source: "backfill", status: "ready" }
       ]
     };
@@ -94,7 +103,7 @@ describe("history worker routes", () => {
     expect(listResponse.status).toBe(200);
     expect(await listResponse.json()).toMatchObject({
       dates: [
-        { date: "2026-07-09", source: "live" },
+        { date: "2026-07-09", source: "live", bootstrapSeed: true },
         { date: "2026-07-08", source: "backfill" }
       ]
     });
@@ -103,7 +112,7 @@ describe("history worker routes", () => {
     expect(pageResponse.status).toBe(200);
     const html = await pageResponse.text();
     expect(html).toContain("2026-07-09 榜单");
-    expect(html).toContain("实时留存");
+    expect(html).toContain("仓库恢复");
   });
 
   it("returns distinct 404 and 503 errors without reading latest-signal-snapshot", async () => {
@@ -137,7 +146,7 @@ describe("history worker routes", () => {
   });
 });
 
-function makeDetail(rows: SignalRow[]): HistoryDetail {
+function makeDetail(rows: SignalRow[], bootstrapSeed = false): HistoryDetail {
   const snapshot = makeSnapshot(rows);
   const enrich = (row: SignalRow) => ({
     ...row,
@@ -146,7 +155,7 @@ function makeDetail(rows: SignalRow[]): HistoryDetail {
   return {
     date: "2026-07-09",
     source: "live",
-    entry: { date: "2026-07-09", source: "live", status: "ready" },
+    entry: { date: "2026-07-09", source: "live", status: "ready", ...(bootstrapSeed ? { bootstrapSeed: true } : {}) },
     snapshot: {
       ...snapshot,
       boards: snapshot.boards.map((board) => ({ ...board, rows: board.rows.map(enrich) })),
