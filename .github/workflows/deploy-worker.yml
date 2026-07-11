@@ -74,14 +74,15 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           const baseUrl = 'https://badguard.nizabentley397.workers.dev';
+          const cacheBust = encodeURIComponent(process.env.GITHUB_SHA || String(Date.now()));
           let lastStatus = 'not requested';
 
           for (let attempt = 1; attempt <= 6; attempt += 1) {
             const responses = await Promise.all([
-              fetch(`${baseUrl}/api/health`),
-              fetch(`${baseUrl}/api/signals`),
-              fetch(`${baseUrl}/api/history`),
-              fetch(`${baseUrl}/api/history/2026-07-10`)
+              fetch(`${baseUrl}/api/health?verify=${cacheBust}`),
+              fetch(`${baseUrl}/api/signals?verify=${cacheBust}`),
+              fetch(`${baseUrl}/api/history?verify=${cacheBust}`),
+              fetch(`${baseUrl}/api/history/2026-07-10?verify=${cacheBust}`)
             ]).catch((error) => {
               lastStatus = error.message;
               return [];
