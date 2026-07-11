@@ -1,5 +1,6 @@
 import { getSnapshotDataQuality, type SnapshotDataQuality } from "./data-quality";
 import type { DataFreshness } from "./data-health";
+import { eastmoneyQuoteUrl } from "./quote";
 import type { SignalBoard, SignalId, SignalRow, SignalSnapshot } from "./types";
 
 interface SignalPresentation {
@@ -264,6 +265,7 @@ function renderCards(rows: SignalRow[], showSignal: boolean, variant: "board" | 
 function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "summary", hidden: boolean): string {
   const stanceClass = row.stance === "谨慎" ? "caution" : "observe";
   const copy = SIGNAL_COPY[row.signalId];
+  const quoteUrl = eastmoneyQuoteUrl(row.code);
 
   return `<article class="signal-card" id="${cardId(row, variant)}" data-progress-card data-progress-item${hidden ? " hidden" : ""}>
     <div class="card-topline">
@@ -275,6 +277,12 @@ function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "sum
     </div>
 
     <div class="signal-name">${escapeHtml(showSignal ? copy.title : copy.mood)}</div>
+
+    ${quoteUrl ? `<a class="quote-link" href="${escapeHtml(quoteUrl)}" target="_blank" rel="noopener noreferrer" aria-label="查看${escapeHtml(row.name)}的东方财富实时行情">
+      <span class="quote-link__status" aria-hidden="true"></span>
+      <span>实时行情 · 东方财富</span>
+      <b aria-hidden="true">↗</b>
+    </a>` : ""}
 
     <dl class="card-metrics">
       <div class="metric-pair metric-pair--date-return">
@@ -989,6 +997,7 @@ main {
 .signal-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 14px;
 }
 
@@ -1097,6 +1106,48 @@ main {
   font-size: 0.98rem;
   font-weight: 900;
   line-height: 1.52;
+}
+
+.quote-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 9px;
+  color: var(--indigo);
+  border: 1px solid rgba(54, 83, 122, 0.3);
+  border-radius: 5px;
+  background: rgba(232, 237, 244, 0.6);
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.quote-link:hover {
+  color: var(--cinnabar);
+  border-color: rgba(164, 71, 53, 0.46);
+  background: rgba(250, 232, 223, 0.72);
+}
+
+.quote-link:focus-visible {
+  outline: 3px solid rgba(54, 83, 122, 0.24);
+  outline-offset: 2px;
+}
+
+.quote-link__status {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--cinnabar);
+  box-shadow: 0 0 0 3px rgba(164, 71, 53, 0.12);
+}
+
+.quote-link b {
+  font-size: 0.9rem;
 }
 
 .card-metrics,

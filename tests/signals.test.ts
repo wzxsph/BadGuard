@@ -176,6 +176,16 @@ describe("daily technical signal board", () => {
     expect(cardMatch![1]).toMatch(/<div class="metric-pair metric-pair--amount-industry">[\s\S]*<dt>成交额<\/dt>[\s\S]*<dt>所属行业<\/dt>/);
   });
 
+  it("keeps desktop cards independent and links to the external live quote", () => {
+    const html = renderHtml(snapshot);
+
+    expect(html).toContain("align-items: start;");
+    expect(html).toContain('class="quote-link"');
+    expect(html).toContain('href="https://quote.eastmoney.com/sh600629.html"');
+    expect(html).toContain('target="_blank" rel="noopener noreferrer"');
+    expect(html).toContain("实时行情 · 东方财富");
+  });
+
   it("only uses observation-oriented stances in visible rows", () => {
     const stances = snapshot.boards.flatMap((board) => board.rows.map((row) => row.stance));
 

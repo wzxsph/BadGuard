@@ -1,4 +1,5 @@
 import { getSnapshotDataQuality, type SnapshotDataQuality } from "./data-quality";
+import { eastmoneyQuoteUrl } from "./quote";
 import type { SignalBoard, SignalRow, SignalSnapshot } from "./types";
 
 export interface HistoryPageEntry {
@@ -170,11 +171,13 @@ function renderPanels(boards: HistoryPageBoard[]): string {
 
 function renderHistoryCard(row: HistoryPageRow): string {
   const scoreLabel = row.signalId === "risk-filter" ? "风险强度" : "结构确认分";
+  const quoteUrl = eastmoneyQuoteUrl(row.code);
   return `<article class="history-card">
     <div class="stock-line">
       <div><strong>${escapeHtml(row.name)}</strong><span>${escapeHtml(row.code)}</span></div>
       <b class="stance stance--${row.stance === "谨慎" ? "caution" : "observe"}">${escapeHtml(row.stance)}</b>
     </div>
+    ${quoteUrl ? `<a class="quote-link" href="${escapeHtml(quoteUrl)}" target="_blank" rel="noopener noreferrer" aria-label="查看${escapeHtml(row.name)}的东方财富实时行情"><i aria-hidden="true"></i><span>实时行情 · 东方财富</span><b aria-hidden="true">↗</b></a>` : ""}
     <dl class="history-metrics">
       <div><dt>入榜日</dt><dd>${escapeHtml(row.triggerDate)}</dd></div>
       <div><dt>成交额</dt><dd>${formatAmount(row.amount)}</dd></div>
@@ -349,7 +352,7 @@ main { display: grid; gap: 26px; max-width: 1180px; margin: 0 auto; padding: 0 2
 .board-summary { padding: 4px 0 14px; border-bottom: 1px solid var(--line); }
 .board-summary p { margin: 5px 0 0; color: var(--muted); }
 .board-summary > span { white-space: nowrap; color: var(--indigo); font-weight: 900; }
-.history-cards { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; padding-top: 14px; }
+.history-cards { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); align-items: start; gap: 14px; padding-top: 14px; }
 .history-card { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255,255,255,.42); }
 .stock-line > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .stock-line strong { font-size: 1.15rem; }
@@ -357,6 +360,11 @@ main { display: grid; gap: 26px; max-width: 1180px; margin: 0 auto; padding: 0 2
 .stance { padding: 4px 8px; border-radius: 999px; font-size: .76rem; }
 .stance--observe { color: var(--indigo); background: rgba(54,83,122,.12); }
 .stance--caution { color: var(--red); background: rgba(164,71,53,.12); }
+.quote-link { display: inline-flex; align-items: center; gap: 7px; min-height: 30px; margin-top: 11px; padding: 5px 9px; color: var(--indigo); border: 1px solid rgba(54,83,122,.3); border-radius: 5px; background: rgba(54,83,122,.07); font-size: .78rem; font-weight: 900; line-height: 1.2; text-decoration: none; }
+.quote-link:hover { color: var(--red); border-color: rgba(164,71,53,.46); background: rgba(164,71,53,.08); }
+.quote-link:focus-visible { outline: 3px solid rgba(54,83,122,.24); outline-offset: 2px; }
+.quote-link i { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 3px rgba(164,71,53,.12); }
+.quote-link b { font-size: .9rem; }
 .history-metrics { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 14px; margin: 15px 0; }
 .history-metrics div { min-width: 0; }
 .history-metrics dt { color: var(--muted); font-size: .75rem; }
@@ -452,7 +460,10 @@ const HISTORY_JS = `
   function cardHtml(row) {
     const tags = (row.liquidityTags || []).map((tag) => '<span>' + esc(tag) + '</span>').join("");
     const score = row.signalId === "risk-filter" ? "风险强度" : "结构确认分";
+    const market = /^(4|8|920)/.test(row.code) ? "bj/" : /^[569]/.test(row.code) ? "sh" : "sz";
+    const quote = /^[0-9]{6}$/.test(row.code) ? "https://quote.eastmoney.com/" + market + row.code + ".html" : "";
     return '<article class="history-card"><div class="stock-line"><div><strong>' + esc(row.name) + '</strong><span>' + esc(row.code) + '</span></div><b class="stance stance--' + (row.stance === "谨慎" ? "caution" : "observe") + '">' + esc(row.stance) + '</b></div>' +
+      (quote ? '<a class="quote-link" href="' + quote + '" target="_blank" rel="noopener noreferrer" aria-label="查看' + esc(row.name) + '的东方财富实时行情"><i aria-hidden="true"></i><span>实时行情 · 东方财富</span><b aria-hidden="true">↗</b></a>' : "") +
       '<dl class="history-metrics"><div><dt>入榜日</dt><dd>' + esc(row.triggerDate) + '</dd></div><div><dt>成交额</dt><dd>' + amount(row.amount) + '</dd></div><div><dt>流通市值</dt><dd>' + cap(row.floatMarketCap) + '</dd></div><div><dt>换手率</dt><dd>' + turnover(row.turnoverRate) + '</dd></div></dl>' +
       '<div class="return-grid" aria-label="入榜后累计涨跌">' + returnHtml("T+1", row.forwardReturns?.t1) + returnHtml("T+2", row.forwardReturns?.t2) + '</div>' +
       '<div class="score-line"><span>' + score + '</span><meter min="0" max="100" value="' + row.signalStrength + '"></meter><b>' + row.signalStrength + '</b></div>' + (tags ? '<div class="tag-row">' + tags + '</div>' : "") + '</article>';

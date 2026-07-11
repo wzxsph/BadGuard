@@ -36,6 +36,8 @@ describe("history page rendering", () => {
     expect(html).toContain("风险过滤");
     expect(html).toContain("流通市值");
     expect(html).toContain("换手率");
+    expect(html).toContain('href="https://quote.eastmoney.com/sz000001.html"');
+    expect(html).toContain("实时行情 · 东方财富");
     expect(html).toContain("扫描股票");
     expect(html).toContain("行情成功");
     expect(html).toContain("精确收盘");
