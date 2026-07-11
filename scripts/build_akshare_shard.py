@@ -323,6 +323,7 @@ def fetch_shard_histories_with_retries(
     for round_index in range(maximum_rounds):
         if not remaining or time.monotonic() >= absolute_deadline:
             break
+        round_stocks = order_retry_stocks(remaining, context, round_index)
         round_context = {
             **context,
             "_absoluteSoftDeadline": absolute_deadline,
@@ -343,7 +344,7 @@ def fetch_shard_histories_with_retries(
             flush=True,
         )
         histories, failures, round_provider_counts, round_cache_counts = fetch_shard_histories(
-            remaining,
+            round_stocks,
             round_context,
             cache_dir,
             heartbeat_seconds,
@@ -389,6 +390,25 @@ def fetch_shard_histories_with_retries(
         final_failures,
         provider_counts,
         cache_counts,
+    )
+
+
+def order_retry_stocks(
+    stocks: list[StockItem],
+    context: dict[str, Any],
+    round_index: int,
+) -> list[StockItem]:
+    """Spread adjacent exchange/code families without making retries random."""
+
+    context_hash = str(context.get("contextHash") or "")
+    if not context_hash:
+        return list(stocks)
+
+    return sorted(
+        stocks,
+        key=lambda stock: hashlib.sha256(
+            f"{context_hash}:{round_index}:{stock.code}".encode("utf-8")
+        ).digest(),
     )
 
 

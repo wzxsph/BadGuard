@@ -1303,10 +1303,10 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 
 
 def market_symbol(code: str) -> str:
+    if code.startswith(("4", "8")) or code.startswith("920"):
+        return f"bj{code}"
     if code.startswith(("6", "9")):
         return f"sh{code}"
-    if code.startswith(("4", "8")):
-        return f"bj{code}"
     return f"sz{code}"
 
 

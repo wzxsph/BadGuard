@@ -1,6 +1,6 @@
-import companyProfilesJson from "../data/company-profiles.json";
 import { getSnapshotDataQuality, type SnapshotDataQuality } from "./data-quality";
-import type { CompanyProfile, SignalBoard, SignalId, SignalRow, SignalSnapshot } from "./types";
+import type { DataFreshness } from "./data-health";
+import type { SignalBoard, SignalId, SignalRow, SignalSnapshot } from "./types";
 
 interface SignalPresentation {
   title: string;
@@ -46,13 +46,12 @@ const SIGNAL_COPY: Record<SignalId, SignalPresentation> = {
   }
 };
 
-const COMPANY_PROFILES = companyProfilesJson as Record<string, CompanyProfile>;
 const INITIAL_VISIBLE_CARDS = 5;
 const CARD_REVEAL_STEP = 10;
 const INITIAL_VISIBLE_DIRECTORY_ITEMS = 30;
 const DIRECTORY_REVEAL_STEP = 30;
 
-export function renderHtml(snapshot: SignalSnapshot): string {
+export function renderHtml(snapshot: SignalSnapshot, freshness: DataFreshness | null = null): string {
   const quality = getSnapshotDataQuality(snapshot);
   return `<!doctype html>
 <html lang="zh-CN">
@@ -78,6 +77,7 @@ export function renderHtml(snapshot: SignalSnapshot): string {
       <div><dt>数据源</dt><dd>${escapeHtml(snapshot.sourceLabel)}</dd></div>
       <div><dt>数据范围</dt><dd>${escapeHtml(formatDataScope(snapshot, quality))}</dd></div>
       <div><dt>榜单状态</dt><dd>${escapeHtml(quality.snapshotTimingLabel)}</dd></div>
+      ${freshness ? `<div><dt>更新状态</dt><dd>${escapeHtml(freshness.label)}</dd></div>` : ""}
     </dl>
   </header>
 
@@ -264,7 +264,6 @@ function renderCards(rows: SignalRow[], showSignal: boolean, variant: "board" | 
 function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "summary", hidden: boolean): string {
   const stanceClass = row.stance === "谨慎" ? "caution" : "observe";
   const copy = SIGNAL_COPY[row.signalId];
-  const companyProfile = getCompanyProfile(row);
 
   return `<article class="signal-card" id="${cardId(row, variant)}" data-progress-card data-progress-item${hidden ? " hidden" : ""}>
     <div class="card-topline">
@@ -305,7 +304,7 @@ function renderCard(row: SignalRow, showSignal: boolean, variant: "board" | "sum
 
     <details class="signal-detail">
       <summary>展开详情</summary>
-      ${renderCompanyProfile(companyProfile)}
+      ${renderCompanyProfilePlaceholder(row.code)}
       <dl class="indicator-detail">
         <div><dt>专业注解</dt><dd>${escapeHtml(copy.professionalTitle)}：${escapeHtml(row.signalName)}</dd></div>
         <div><dt>KDJ</dt><dd>K ${formatNumber(row.indicators.kdj.k)} / D ${formatNumber(row.indicators.kdj.d)} / J ${formatNumber(row.indicators.kdj.j)}</dd></div>
@@ -320,132 +319,18 @@ function cardId(row: Pick<SignalRow, "code" | "signalId">, variant: "board" | "s
   return `${variant === "board" ? "stock" : "summary"}-${row.code}-${row.signalId}`;
 }
 
-function getCompanyProfile(row: Pick<SignalRow, "code" | "name" | "industry">): CompanyProfile {
-  const profile = COMPANY_PROFILES[row.code];
-  if (profile) {
-    return {
-      ...profile,
-      name: profile.name || row.name,
-      industry: profile.industry || row.industry
-    };
-  }
-
-  return {
-    code: row.code,
-    name: row.name,
-    industry: row.industry || "未分类",
-    market: inferMarket(row.code),
-    profileSource: "signal-snapshot",
-    updatedAt: "",
-    mainBusiness: "",
-    businessScope: "",
-    organizationProfile: "",
-    businessComposition: [],
-    note: "暂未抓到完整 F10，只保留信号快照里的基础识别信息；别急，这家公司资料还在路上。"
-  };
-}
-
-function renderCompanyProfile(profile: CompanyProfile): string {
-  const sourceLabel = profile.profileSource === "akshare-f10" ? "F10 已收录" : "资料待补";
-  const rows = buildCompanyProfileRows(profile);
-
-  return `<section class="company-profile" aria-label="公司概况F10">
+function renderCompanyProfilePlaceholder(code: string): string {
+  const rows = ["主营业务", "主营构成", "经营范围", "公司小传", "上市/成立", "注册/办公", "法人/注册资本", "官网/联系"];
+  return `<section class="company-profile" aria-label="公司概况F10" data-company-profile data-code="${escapeHtml(code)}" data-state="idle">
     <div class="company-profile__title">
       <h3>公司概况 F10 小抄</h3>
-      <span>${escapeHtml(sourceLabel)}</span>
+      <span data-profile-status>展开后加载</span>
     </div>
     <dl>
-      ${rows.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
+      ${rows.map((label) => `<div data-profile-field="${escapeHtml(label)}" hidden><dt>${escapeHtml(label)}</dt><dd></dd></div>`).join("")}
     </dl>
-    ${profile.note ? `<p>${escapeHtml(profile.note)}</p>` : ""}
+    <p data-profile-note>展开后按需读取资料，不让五千多家公司一起挤进 Worker。</p>
   </section>`;
-}
-
-function buildCompanyProfileRows(profile: CompanyProfile): Array<[string, string]> {
-  const profileRows: Array<[string, string]> = [
-    ["主营业务", profile.mainBusiness || ""],
-    ["主营构成", formatBusinessComposition(profile)],
-    ["经营范围", profile.businessScope || ""],
-    ["公司小传", profile.organizationProfile || ""],
-    ["上市/成立", formatProfileDates(profile)],
-    ["注册/办公", formatProfileAddress(profile)],
-    ["法人/注册资本", formatRepresentative(profile)],
-    ["官网/联系", formatProfileContact(profile)]
-  ];
-  const rows = profileRows.filter(([, value]) => value.trim().length > 0);
-
-  if (rows.length === 0) {
-    return [["资料状态", "F10 还没收集到，当前只展示技术信号；这家公司先记在小本本上。"]];
-  }
-
-  return rows;
-}
-
-function formatBusinessComposition(profile: CompanyProfile): string {
-  const segments = (profile.businessComposition || [])
-    .filter((segment) => segment.name)
-    .slice(0, 4);
-
-  if (segments.length === 0) {
-    return "";
-  }
-
-  const reportDate = segments[0].reportDate ? `${segments[0].reportDate}：` : "";
-  const summary = segments
-    .map((segment) => {
-      const revenueRatio = typeof segment.revenueRatioPct === "number" ? `收入占比 ${formatNumber(segment.revenueRatioPct)}%` : "";
-      const grossMargin = typeof segment.grossMarginPct === "number" ? `毛利率 ${formatNumber(segment.grossMarginPct)}%` : "";
-      return [segment.name, revenueRatio, grossMargin].filter(Boolean).join(" / ");
-    })
-    .join("；");
-
-  return `${reportDate}${summary}`;
-}
-
-function formatProfileDates(profile: CompanyProfile): string {
-  const items = [
-    profile.listingDate ? `上市 ${profile.listingDate}` : "",
-    profile.establishedDate ? `成立 ${profile.establishedDate}` : ""
-  ].filter(Boolean);
-  return items.join("；");
-}
-
-function formatProfileAddress(profile: CompanyProfile): string {
-  const items = [
-    profile.region ? `地区 ${profile.region}` : "",
-    profile.officeAddress ? `办公 ${profile.officeAddress}` : "",
-    profile.registeredAddress && profile.registeredAddress !== profile.officeAddress ? `注册 ${profile.registeredAddress}` : ""
-  ].filter(Boolean);
-  return items.join("；");
-}
-
-function formatRepresentative(profile: CompanyProfile): string {
-  const items = [
-    profile.legalRepresentative ? `法人 ${profile.legalRepresentative}` : "",
-    profile.registeredCapital ? `注册资金 ${profile.registeredCapital}` : ""
-  ].filter(Boolean);
-  return items.join("；");
-}
-
-function formatProfileContact(profile: CompanyProfile): string {
-  const items = [
-    profile.website ? `官网 ${profile.website}` : "",
-    profile.phone ? `电话 ${profile.phone}` : "",
-    profile.email ? `邮箱 ${profile.email}` : ""
-  ].filter(Boolean);
-  return items.join("；");
-}
-
-function inferMarket(code: string): string {
-  if (code.startsWith("6")) {
-    return "上交所";
-  }
-
-  if (code.startsWith("8") || code.startsWith("4")) {
-    return "北交所";
-  }
-
-  return "深交所";
 }
 
 function formatAmount(value: number | null | undefined): string {
@@ -1526,6 +1411,89 @@ const JS = `
   const notice = document.querySelector("[data-entry-notice]");
   const acceptNoticeButton = document.querySelector("[data-entry-accept]");
   const getItems = (wrapper) => Array.from(wrapper.querySelectorAll("[data-progress-item]"));
+  const profileRequests = new Map();
+
+  const compact = (items) => items.filter((item) => typeof item === "string" && item.trim()).join("；");
+  const formatProfileNumber = (value) => typeof value === "number" && Number.isFinite(value)
+    ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value)
+    : "";
+  const formatSegments = (profile) => {
+    const segments = Array.isArray(profile.businessComposition)
+      ? profile.businessComposition.filter((item) => item && item.name).slice(0, 4)
+      : [];
+    if (!segments.length) return "";
+    const reportDate = segments[0].reportDate ? segments[0].reportDate + "：" : "";
+    return reportDate + segments.map((segment) => compact([
+      segment.name,
+      typeof segment.revenueRatioPct === "number" ? "收入占比 " + formatProfileNumber(segment.revenueRatioPct) + "%" : "",
+      typeof segment.grossMarginPct === "number" ? "毛利率 " + formatProfileNumber(segment.grossMarginPct) + "%" : ""
+    ]).replaceAll("；", " / ")).join("；");
+  };
+  const profileFields = (profile) => ({
+    "主营业务": profile.mainBusiness || "",
+    "主营构成": formatSegments(profile),
+    "经营范围": profile.businessScope || "",
+    "公司小传": profile.organizationProfile || "",
+    "上市/成立": compact([
+      profile.listingDate ? "上市 " + profile.listingDate : "",
+      profile.establishedDate ? "成立 " + profile.establishedDate : ""
+    ]),
+    "注册/办公": compact([
+      profile.region ? "地区 " + profile.region : "",
+      profile.officeAddress ? "办公 " + profile.officeAddress : "",
+      profile.registeredAddress && profile.registeredAddress !== profile.officeAddress ? "注册 " + profile.registeredAddress : ""
+    ]),
+    "法人/注册资本": compact([
+      profile.legalRepresentative ? "法人 " + profile.legalRepresentative : "",
+      profile.registeredCapital ? "注册资金 " + profile.registeredCapital : ""
+    ]),
+    "官网/联系": compact([
+      profile.website ? "官网 " + profile.website : "",
+      profile.phone ? "电话 " + profile.phone : "",
+      profile.email ? "邮箱 " + profile.email : ""
+    ])
+  });
+
+  const renderLoadedProfile = (container, profile) => {
+    let visibleRows = 0;
+    const fields = profileFields(profile);
+    container.querySelectorAll("[data-profile-field]").forEach((row) => {
+      const value = fields[row.dataset.profileField] || "";
+      row.hidden = !value;
+      const valueNode = row.querySelector("dd");
+      if (valueNode) valueNode.textContent = value;
+      if (value) visibleRows += 1;
+    });
+    const status = container.querySelector("[data-profile-status]");
+    const note = container.querySelector("[data-profile-note]");
+    if (status) status.textContent = profile.profileSource === "akshare-f10" ? "F10 已收录" : "资料待补";
+    if (note) {
+      note.textContent = profile.note || (visibleRows ? "资料为低频维护的公司概况，请以公司公告为准。" : "F10 暂未收集到，先看技术信号，资料随后补课。");
+    }
+    container.dataset.state = "loaded";
+  };
+
+  const loadCompanyProfile = async (container) => {
+    if (!container || container.dataset.state !== "idle") return;
+    const code = container.dataset.code;
+    const status = container.querySelector("[data-profile-status]");
+    container.dataset.state = "loading";
+    if (status) status.textContent = "正在翻资料";
+    try {
+      if (!profileRequests.has(code)) {
+        profileRequests.set(code, fetch("/api/company/" + encodeURIComponent(code)).then(async (response) => {
+          if (!response.ok) throw new Error("profile unavailable");
+          return response.json();
+        }));
+      }
+      renderLoadedProfile(container, await profileRequests.get(code));
+    } catch (_error) {
+      container.dataset.state = "error";
+      if (status) status.textContent = "资料待补";
+      const note = container.querySelector("[data-profile-note]");
+      if (note) note.textContent = "F10 暂时没翻出来，不影响技术指标详情；稍后再展开看看。";
+    }
+  };
 
   const hasAcceptedNotice = () => {
     try {
@@ -1596,6 +1564,11 @@ const JS = `
   };
 
   document.querySelectorAll("[data-progressive-list]").forEach(updateButton);
+  document.querySelectorAll(".signal-detail").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      if (details.open) loadCompanyProfile(details.querySelector("[data-company-profile]"));
+    });
+  });
 
   acceptNoticeButton?.addEventListener("click", () => {
     rememberNotice();

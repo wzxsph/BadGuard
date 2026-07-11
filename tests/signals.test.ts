@@ -204,6 +204,15 @@ describe("daily technical signal board", () => {
     expect(detailArea).not.toContain("<dt>行业</dt>");
   });
 
+  it("ships syntactically valid lazy-detail browser code", () => {
+    const html = renderHtml(snapshot);
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+
+    expect(script).toBeTruthy();
+    expect(() => new Function(script!)).not.toThrow();
+    expect(script).toContain("/api/company/");
+  });
+
   it("renders the daily summary after all four boards", () => {
     const html = renderHtml(snapshot);
 

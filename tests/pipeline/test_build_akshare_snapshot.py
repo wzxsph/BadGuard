@@ -25,6 +25,7 @@ from scripts.build_akshare_snapshot import (
     evaluate_stock_for_date,
     liquidity_status,
     make_row,
+    market_symbol,
     normalize_history,
     industry_worker_count,
     previous_trading_dates,
@@ -34,6 +35,15 @@ from scripts.build_akshare_snapshot import (
     source_for_target,
     validate_production_universe,
 )
+
+
+class MarketSymbolTests(unittest.TestCase):
+    def test_new_beijing_exchange_codes_are_not_treated_as_shanghai(self) -> None:
+        self.assertEqual(market_symbol("920000"), "bj920000")
+        self.assertEqual(market_symbol("430001"), "bj430001")
+        self.assertEqual(market_symbol("830001"), "bj830001")
+        self.assertEqual(market_symbol("600000"), "sh600000")
+        self.assertEqual(market_symbol("000001"), "sz000001")
 
 
 class HistoryNormalizationTests(unittest.TestCase):

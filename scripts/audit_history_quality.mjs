@@ -9,6 +9,8 @@ const output = args.output || "data/quality-audit.json";
 const marketDateLookback = Number(args["market-lookback"] ?? 5);
 const minHistoryCoverage = Number(args["min-history-coverage"] ?? 0.98);
 const minCloseCoverage = Number(args["min-close-coverage"] ?? 0.9);
+const closeGraceMinutes = Number(args["close-grace-minutes"] ?? 45);
+const baseUrl = String(args["base-url"] ?? "").replace(/\/$/, "");
 
 const accountId = requiredEnv("CLOUDFLARE_ACCOUNT_ID");
 const apiToken = requiredEnv("CLOUDFLARE_API_TOKEN");
@@ -53,7 +55,7 @@ if (tradingDates.length === 0) {
   process.exit(0);
 }
 
-const latestCompletedDate = latestCompletedTradingDate(tradingDates, new Date());
+const latestCompletedDate = latestCompletedTradingDate(tradingDates, new Date(), closeGraceMinutes);
 if (!latestCompletedDate) {
   const summary = {
     reason: "no-completed-trading-date",
@@ -90,6 +92,17 @@ for (const date of recentDates) {
 }
 
 const missingDates = evaluated.filter((entry) => entry.needsBackfill);
+const apiStatus = baseUrl && latestCompletedDate
+  ? await evaluatePublicApi(baseUrl, latestCompletedDate)
+  : null;
+if (apiStatus?.needsBackfill && !missingDates.some((entry) => entry.date === latestCompletedDate)) {
+  missingDates.push({
+    date: latestCompletedDate,
+    status: "api-stale",
+    needsBackfill: true,
+    reason: apiStatus.reason
+  });
+}
 const needsBackfill = missingDates.length > 0;
 const summary = {
   generatedAt: new Date().toISOString(),
@@ -99,6 +112,8 @@ const summary = {
     minCloseCoverage
   },
   latestCompletedDate,
+  closeGraceMinutes,
+  apiStatus,
   recentDates,
   evaluatedCount: evaluated.length,
   needsBackfill,
@@ -257,7 +272,50 @@ function setOutput(summary) {
   return fs.appendFile(output, `${lines.join("\n")}\n`, "utf8");
 }
 
-function latestCompletedTradingDate(tradingDates, now = new Date()) {
+async function evaluatePublicApi(baseUrl, latestCompletedDate) {
+  let lastReason = "public API did not respond";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const [signalsResponse, historyResponse] = await Promise.all([
+        fetch(`${baseUrl}/api/signals`),
+        fetch(`${baseUrl}/api/history`)
+      ]);
+      if (!signalsResponse.ok || !historyResponse.ok) {
+        lastReason = `public API status ${signalsResponse.status}/${historyResponse.status}`;
+      } else {
+        const signals = await signalsResponse.json();
+        const history = await historyResponse.json();
+        const entry = Array.isArray(history?.dates)
+          ? history.dates.find((item) => item?.date === latestCompletedDate)
+          : null;
+        const healthy = signals?.marketDate === latestCompletedDate && entry?.status === "ready";
+        return {
+          healthy,
+          needsBackfill: !healthy,
+          latestCompletedDate,
+          signalDate: signals?.marketDate ?? null,
+          historyReady: entry?.status === "ready",
+          reason: healthy
+            ? "ok"
+            : `public API is stale: signals=${signals?.marketDate ?? "missing"}, history=${entry?.status ?? "missing"}`
+        };
+      }
+    } catch (error) {
+      lastReason = String(error?.message || error);
+    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+  }
+  return {
+    healthy: false,
+    needsBackfill: true,
+    latestCompletedDate,
+    signalDate: null,
+    historyReady: false,
+    reason: lastReason
+  };
+}
+
+function latestCompletedTradingDate(tradingDates, now = new Date(), graceMinutes = 45) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
     year: "numeric",
@@ -271,7 +329,9 @@ function latestCompletedTradingDate(tradingDates, now = new Date()) {
   const byType = new Map(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
   const localDate = `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
   const localHour = Number(byType.get("hour"));
-  const completedThrough = localHour < 15
+  const localMinute = Number(byType.get("minute"));
+  const afterCloseWithGrace = localHour * 60 + localMinute >= 15 * 60 + graceMinutes;
+  const completedThrough = !afterCloseWithGrace
     ? previousTradingDate(tradingDates, localDate)
     : latestLessThanOrEqual(tradingDates, localDate);
   return completedThrough ?? latestLessThanOrEqual(tradingDates, localDate);

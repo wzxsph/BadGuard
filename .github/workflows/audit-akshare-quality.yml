@@ -3,7 +3,7 @@ name: Audit AkShare Quality and Repair
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 1-7 * * *"
+    - cron: "17 */2 * * *"
 
 permissions:
   contents: read
@@ -45,9 +45,11 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          KV_NAMESPACE_ID: ${{ env.KV_NAMESPACE_ID }}
         run: |
-          node scripts/audit_history_quality.mjs --output data/quality-audit.json
+          node scripts/audit_history_quality.mjs \
+            --output data/quality-audit.json \
+            --close-grace-minutes 45 \
+            --base-url https://badguard.nizabentley397.workers.dev
 
       - name: Upload quality audit report
         uses: actions/upload-artifact@v4
@@ -57,8 +59,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Dispatch targeted production backfill
+      - name: Check for an active production refresh
+        id: refresh_guard
         if: ${{ steps.audit.outputs.NEEDS_BACKFILL == 'true' && steps.audit.outputs.BACKFILL_START != '' && steps.audit.outputs.BACKFILL_END != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          ACTIVE_COUNT="$(gh api \
+            "repos/$REPO/actions/workflows/refresh-akshare.yml/runs?per_page=20" \
+            --jq '[.workflow_runs[] | select(.status == "queued" or .status == "in_progress")] | length')"
+          if [ "$ACTIVE_COUNT" -gt 0 ]; then
+            echo "SHOULD_DISPATCH=false" >> "$GITHUB_OUTPUT"
+            echo "A production refresh is already queued or running; this audit will not add another."
+          else
+            echo "SHOULD_DISPATCH=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch targeted production backfill
+        if: ${{ steps.refresh_guard.outputs.SHOULD_DISPATCH == 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}

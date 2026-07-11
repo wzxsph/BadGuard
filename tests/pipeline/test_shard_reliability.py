@@ -19,6 +19,7 @@ from scripts.build_akshare_shard import (
     history_cache_metadata,
     history_cache_path,
     load_or_fetch_history,
+    order_retry_stocks,
     read_history_cache,
     read_history_cache_entry,
     write_history_cache,
@@ -48,6 +49,19 @@ def make_bars(prices: dict[str, float]) -> pd.DataFrame:
         }
         for date, close in prices.items()
     ])
+
+
+class RetryOrderingTests(unittest.TestCase):
+    def test_context_hash_spreads_code_families_deterministically(self) -> None:
+        stocks = [StockItem(f"920{index:03d}", f"测试{index}", "测试") for index in range(20)]
+
+        first = order_retry_stocks(stocks, {"contextHash": "stable-context"}, 0)
+        repeated = order_retry_stocks(list(reversed(stocks)), {"contextHash": "stable-context"}, 0)
+        next_round = order_retry_stocks(stocks, {"contextHash": "stable-context"}, 1)
+
+        self.assertEqual([stock.code for stock in first], [stock.code for stock in repeated])
+        self.assertNotEqual([stock.code for stock in first], [stock.code for stock in stocks])
+        self.assertNotEqual([stock.code for stock in first], [stock.code for stock in next_round])
 
 
 class ProviderTimeoutTests(unittest.TestCase):

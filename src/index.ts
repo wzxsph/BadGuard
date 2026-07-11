@@ -1,4 +1,5 @@
-import { getSnapshot, refreshSnapshot, type Env } from "./data-source";
+import { getCompanyProfile, getSnapshot, refreshSnapshot, type Env } from "./data-source";
+import { getDataFreshness } from "./data-health";
 import { getSnapshotDataQuality, withSnapshotDataQuality } from "./data-quality";
 import {
   HistoryNotFoundError,
@@ -26,7 +27,8 @@ export default {
 
     if (url.pathname === "/") {
       const snapshot = await getSnapshot(env);
-      return new Response(renderHtml(snapshot), {
+      const freshness = await getDataFreshness(env, snapshot).catch(() => null);
+      return new Response(renderHtml(snapshot, freshness), {
         headers: HTML_HEADERS
       });
     }
@@ -91,12 +93,51 @@ export default {
       }
     }
 
+    const companyProfileMatch = url.pathname.match(/^\/api\/company\/(\d{6})$/);
+    if (companyProfileMatch) {
+      if (request.method !== "GET") {
+        return methodNotAllowed("GET");
+      }
+
+      const profile = await getCompanyProfile(env, companyProfileMatch[1]);
+      if (!profile) {
+        return Response.json({
+          error: { code: "company_profile_not_found", message: "该公司的 F10 概况暂未收录。" }
+        }, { status: 404, headers: JSON_HEADERS });
+      }
+
+      return Response.json(profile, {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "cache-control": "public, max-age=86400"
+        }
+      });
+    }
+
     if (url.pathname === "/api/signals") {
       const snapshot = await getSnapshot(env);
       return Response.json({
         ...snapshot,
         dataQuality: getSnapshotDataQuality(snapshot)
       }, { headers: JSON_HEADERS });
+    }
+
+    if (url.pathname === "/api/data-health") {
+      const snapshot = await getSnapshot(env);
+      try {
+        return Response.json(await getDataFreshness(env, snapshot), { headers: JSON_HEADERS });
+      } catch {
+        return Response.json({
+          ok: false,
+          status: "unknown",
+          expectedMarketDate: null,
+          currentMarketDate: snapshot.marketDate,
+          historyReady: false,
+          missingDates: [],
+          checkedAt: new Date().toISOString(),
+          label: "交易日状态暂不可用"
+        }, { headers: JSON_HEADERS });
+      }
     }
 
     if (url.pathname === "/api/refresh" && request.method === "POST") {

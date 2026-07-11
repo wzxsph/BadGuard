@@ -1,6 +1,6 @@
 import bundledSnapshot from "../data/latest.json";
 import { buildSnapshotFromStocks, enforceSnapshotLiquidity } from "./signals";
-import type { SignalSnapshot, StockSeries } from "./types";
+import type { CompanyProfile, SignalSnapshot, StockSeries } from "./types";
 
 export interface Env {
   SIGNAL_KV?: KVNamespace;
@@ -13,6 +13,20 @@ const CACHE_KEY = "latest-signal-snapshot";
 export const LATEST_SIGNAL_SNAPSHOT_KEY = CACHE_KEY;
 export const STAGING_SIGNAL_SNAPSHOT_KEY = "staging-signal-snapshot";
 export const DATED_SIGNAL_SNAPSHOT_PREFIX = "signal-snapshot:";
+export const COMPANY_PROFILE_PREFIX = "company-profile:";
+
+export async function getCompanyProfile(env: Env, code: string): Promise<CompanyProfile | null> {
+  if (!env.SIGNAL_KV || !/^\d{6}$/.test(code)) {
+    return null;
+  }
+
+  try {
+    const profile = await env.SIGNAL_KV.get<CompanyProfile>(`${COMPANY_PROFILE_PREFIX}${code}`, "json");
+    return profile && profile.code === code ? profile : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function getSnapshot(env: Env, now = new Date()): Promise<SignalSnapshot> {
   const cached = await readPublishedSnapshot(env);
