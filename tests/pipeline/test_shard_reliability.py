@@ -310,7 +310,7 @@ class HistoryCacheTests(unittest.TestCase):
         self.assertEqual(history.provider, "sina")
         self.assertEqual(fetch.call_args.args[4], "sina")
 
-    def test_suspension_is_cached_as_queried_through_without_filling_close(self) -> None:
+    def test_missing_target_bar_is_rechecked_instead_of_claiming_false_coverage(self) -> None:
         context = {
             **self.context,
             "startDate": "20260601",
@@ -337,13 +337,16 @@ class HistoryCacheTests(unittest.TestCase):
                 return_value=StockHistory(self.stock, suspended_bars, "eastmoney"),
             ) as fetch:
                 history, cache_mode = load_or_fetch_history(self.stock, context, cache_dir)
-            with patch("scripts.build_akshare_shard.fetch_stock_history") as second_fetch:
+            with patch(
+                "scripts.build_akshare_shard.fetch_stock_history",
+                return_value=StockHistory(self.stock, suspended_bars, "eastmoney"),
+            ) as second_fetch:
                 cached_history, second_mode = load_or_fetch_history(self.stock, context, cache_dir)
 
         self.assertEqual(cache_mode, "incremental")
         self.assertEqual(fetch.call_count, 1)
-        self.assertEqual(second_mode, "full")
-        second_fetch.assert_not_called()
+        self.assertEqual(second_mode, "incremental")
+        self.assertEqual(second_fetch.call_count, 1)
         self.assertIsNone(exact_close(history.bars, "2026-07-10"))
         self.assertIsNone(exact_close(cached_history.bars, "2026-07-10"))
 

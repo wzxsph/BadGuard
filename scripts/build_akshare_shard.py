@@ -424,7 +424,12 @@ def load_or_fetch_history(
         cached = migrate_legacy_history_cache(cache_dir, path, metadata)
     requested_start = normalize_cache_date(context["startDate"])
     requested_end = normalize_cache_date(context["endDate"])
-    if cached is not None and cached.fetched_start <= requested_start and cached.fetched_through >= requested_end:
+    if (
+        cached is not None
+        and cached.fetched_start <= requested_start
+        and cached.fetched_through >= requested_end
+        and str(cached.history.bars.iloc[-1]["date"]) >= requested_end
+    ):
         return slice_history(cached.history, requested_start, requested_end), "full"
 
     if cached is not None and cached.fetched_start <= requested_start and not cached.history.bars.empty:
@@ -445,7 +450,7 @@ def load_or_fetch_history(
                     metadata,
                     merged,
                     fetched_start=requested_start,
-                    fetched_through=requested_end,
+                    fetched_through=str(merged.bars.iloc[-1]["date"]),
                 )
                 return merged, "incremental"
 
@@ -455,7 +460,7 @@ def load_or_fetch_history(
         metadata,
         history,
         fetched_start=requested_start,
-        fetched_through=requested_end,
+        fetched_through=str(history.bars.iloc[-1]["date"]),
     )
     return history, "refresh" if cached is not None else "miss"
 
