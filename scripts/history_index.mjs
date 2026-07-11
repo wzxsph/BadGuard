@@ -80,8 +80,8 @@ export function assertStableStockCount(previousSnapshot, nextSnapshot, maximumSh
 export function assertSnapshotCompleteness(
   snapshot,
   closeTable,
-  minimumHistoryCoverage = 0.98,
-  minimumCloseCoverage = 0.90
+  minimumHistoryCoverage = 0.90,
+  minimumCloseCoverage = 0.85
 ) {
   const meta = snapshot?.meta;
   const stockCount = meta?.stockCount;

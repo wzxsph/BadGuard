@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 test("repository snapshot creates only an honest live 2026-07-09 ranked-code seed", async () => {
-  const snapshot = JSON.parse(await fs.readFile("data/latest.json", "utf8"));
+  const snapshot = await loadBootstrapFixture();
   const seed = createBootstrapSeed(snapshot);
   const rankedRows = snapshot.boards.flatMap((board) => board.rows);
   const uniqueCodes = [...new Set(rankedRows.map((row) => row.code))];
@@ -42,7 +42,7 @@ test("repository snapshot creates only an honest live 2026-07-09 ranked-code see
 });
 
 test("seed generation rejects stale rows instead of inventing entry-day closes", async () => {
-  const snapshot = JSON.parse(await fs.readFile("data/latest.json", "utf8"));
+  const snapshot = await loadBootstrapFixture();
   snapshot.boards[0].rows[0].triggerDate = "2026-07-08";
 
   expect(() => createBootstrapSeed(snapshot)).toThrow(/not an exact 2026-07-09 close/);
@@ -53,8 +53,10 @@ test("generated seed passes the explicit publisher validation and contains no 7/
   temporaryDirectories.push(directory);
   const artifactDir = path.join(directory, "publish");
   const calendarPath = path.join(directory, "calendar.json");
+  const inputPath = path.join(directory, "bootstrap-input.json");
+  await fs.writeFile(inputPath, JSON.stringify(await loadBootstrapFixture()), "utf8");
   const result = await writeBootstrapSeed({
-    input: "data/latest.json",
+    input: inputPath,
     artifactDir,
     calendarOutput: calendarPath
   });
@@ -83,3 +85,16 @@ test("generated seed passes the explicit publisher validation and contains no 7/
     "--validate-only"
   ], { cwd: process.cwd(), encoding: "utf8", stdio: "pipe" })).toThrow();
 });
+
+async function loadBootstrapFixture() {
+  const snapshot = JSON.parse(await fs.readFile("data/latest.json", "utf8"));
+  snapshot.marketDate = BOOTSTRAP_MARKET_DATE;
+  snapshot.refreshedAt = "2026-07-09T15:30:00+08:00";
+  for (const row of [
+    ...snapshot.boards.flatMap((board) => board.rows),
+    ...snapshot.topRows
+  ]) {
+    row.triggerDate = BOOTSTRAP_MARKET_DATE;
+  }
+  return snapshot;
+}

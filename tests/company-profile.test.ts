@@ -13,6 +13,22 @@ const profile: CompanyProfile = {
 };
 
 describe("lazy company profiles", () => {
+  it("reads a two-digit F10 chunk with one KV lookup", async () => {
+    const keys: string[] = [];
+    const response = await worker.fetch(new Request("https://example.test/api/company/000001"), {
+      SIGNAL_KV: {
+        get: async (key: string) => {
+          keys.push(key);
+          return key === "company-profiles:00" ? { "000001": profile } : null;
+        }
+      } as unknown as KVNamespace
+    });
+
+    expect(response.status).toBe(200);
+    expect(keys).toEqual(["company-profiles:00"]);
+    expect(await response.json()).toMatchObject(profile);
+  });
+
   it("reads one company profile from KV with public caching", async () => {
     const response = await worker.fetch(new Request("https://example.test/api/company/000001"), {
       SIGNAL_KV: {

@@ -1,5 +1,8 @@
 import type { Env } from "./data-source";
 import type { SignalBoard, SignalRow, SignalSnapshot } from "./types";
+import bundledSnapshotJson from "../data/latest.json";
+import bundledCloseJson from "../data/market-close-latest.json";
+import bundledCalendarJson from "../data/bundled-trading-calendar.json";
 
 export const HISTORY_INDEX_KEY = "signal-history-index";
 export const HISTORY_SNAPSHOT_PREFIX = "history-snapshot:";
@@ -26,6 +29,8 @@ export interface HistoryIndexEntry {
   /** Accepted sticky-universe version used to generate this history entry. */
   universeManifestKey?: string;
   universeManifestRevision?: string;
+  /** Repository artifact used when Cloudflare KV publication is temporarily unavailable. */
+  storage?: "bundled";
 }
 
 /**
@@ -275,7 +280,7 @@ export async function getHistoryIndex(env: Env): Promise<SignalHistoryIndex> {
     throw contractError("History entries exist without an explicit exchange calendar");
   }
 
-  return index;
+  return env.BUNDLED_HISTORY_FALLBACK === "true" ? mergeBundledHistory(index) : index;
 }
 
 export async function getHistoryDetail(
@@ -300,11 +305,13 @@ export async function getHistoryDetail(
   const t2Date = index.tradingDates[calendarIndex + 2] ?? null;
   const now = options.now ?? new Date();
   const kv = requireHistoryKv(env);
-  const snapshot = await readHistorySnapshot(
-    kv,
-    date,
-    entry.snapshotKey ?? `${HISTORY_SNAPSHOT_PREFIX}${date}`
-  );
+  const snapshot = entry.storage === "bundled"
+    ? validateBundledSnapshot(date)
+    : await readHistorySnapshot(
+      kv,
+      date,
+      entry.snapshotKey ?? `${HISTORY_SNAPSHOT_PREFIX}${date}`
+    );
   const entriesByDate = new Map(index.entries.map((candidate) => [candidate.date, candidate]));
   const dueDates = Array.from(new Set(
     [t1Date, t2Date].filter((target): target is string => Boolean(target) && isMarketCloseReached(target, now))
@@ -313,6 +320,10 @@ export async function getHistoryDetail(
 
   await Promise.all(dueDates.map(async (targetDate) => {
     const targetEntry = entriesByDate.get(targetDate);
+    if (targetEntry?.storage === "bundled") {
+      closeTables.set(targetDate, validateBundledCloseTable(targetDate));
+      return;
+    }
     const closeKey = targetEntry?.closeKey ?? `${MARKET_CLOSE_PREFIX}${targetDate}`;
     closeTables.set(targetDate, await readMarketCloseTable(kv, targetDate, closeKey));
   }));
@@ -338,6 +349,45 @@ export async function getHistoryDetail(
       topRows: snapshot.topRows.map(enrichRow)
     }
   };
+}
+
+function mergeBundledHistory(index: SignalHistoryIndex): SignalHistoryIndex {
+  const snapshot = bundledSnapshotJson as SignalSnapshot;
+  const calendar = parseTradingCalendar(bundledCalendarJson);
+  if (!isValidHistoryDate(snapshot.marketDate) || index.entries.some((entry) => entry.date === snapshot.marketDate)) {
+    return index;
+  }
+
+  return normalizeHistoryIndex({
+    ...index,
+    tradingDates: Array.from(new Set([...index.tradingDates, ...calendar.tradingDates])).sort(),
+    entries: [
+      ...index.entries,
+      {
+        date: snapshot.marketDate,
+        source: "live",
+        status: "ready",
+        storage: "bundled",
+        publishedAt: snapshot.refreshedAt
+      }
+    ]
+  });
+}
+
+function validateBundledSnapshot(date: string): SignalSnapshot {
+  const snapshot = bundledSnapshotJson as SignalSnapshot;
+  if (snapshot.marketDate !== date || snapshot.source !== "provider" || snapshot.boards.length !== 4) {
+    throw contractError(`Malformed bundled history snapshot for ${date}`);
+  }
+  return snapshot;
+}
+
+function validateBundledCloseTable(date: string): MarketCloseTable {
+  const close = bundledCloseJson as MarketCloseTable;
+  if (close.marketDate !== date || !close.closes || typeof close.closes !== "object") {
+    throw contractError(`Malformed bundled market close table for ${date}`);
+  }
+  return close;
 }
 
 export function isMarketCloseReached(tradingDate: string, now = new Date()): boolean {
@@ -580,7 +630,8 @@ function parseHistoryEntry(raw: unknown): HistoryIndexEntry {
     (raw.closeKey !== undefined && typeof raw.closeKey !== "string") ||
     (raw.revision !== undefined && typeof raw.revision !== "string") ||
     (raw.universeManifestKey !== undefined && typeof raw.universeManifestKey !== "string") ||
-    (raw.universeManifestRevision !== undefined && typeof raw.universeManifestRevision !== "string")
+    (raw.universeManifestRevision !== undefined && typeof raw.universeManifestRevision !== "string") ||
+    raw.storage !== undefined
   ) {
     throw contractError("Malformed history index entry");
   }
@@ -658,7 +709,8 @@ function validateHistoryEntry(entry: HistoryIndexEntry): void {
     (entry.revision !== undefined && !isSafeRevision(entry.revision)) ||
     (entry.universeManifestRevision !== undefined && !isSafeRevision(entry.universeManifestRevision)) ||
     (entry.universeManifestKey !== undefined && entry.universeManifestKey !== `${UNIVERSE_MANIFEST_PREFIX}${entry.universeManifestRevision}`) ||
-    ((entry.universeManifestKey === undefined) !== (entry.universeManifestRevision === undefined))
+    ((entry.universeManifestKey === undefined) !== (entry.universeManifestRevision === undefined)) ||
+    (entry.storage !== undefined && entry.storage !== "bundled")
   ) {
     throw contractError(`Invalid history index entry for ${String(entry.date)}`);
   }

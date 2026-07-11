@@ -7,6 +7,7 @@ export interface Env {
   DATA_PROVIDER_URL?: string;
   DATA_PROVIDER_AUTH?: string;
   REFRESH_TOKEN?: string;
+  BUNDLED_HISTORY_FALLBACK?: string;
 }
 
 const CACHE_KEY = "latest-signal-snapshot";
@@ -14,6 +15,7 @@ export const LATEST_SIGNAL_SNAPSHOT_KEY = CACHE_KEY;
 export const STAGING_SIGNAL_SNAPSHOT_KEY = "staging-signal-snapshot";
 export const DATED_SIGNAL_SNAPSHOT_PREFIX = "signal-snapshot:";
 export const COMPANY_PROFILE_PREFIX = "company-profile:";
+export const COMPANY_PROFILE_CHUNK_PREFIX = "company-profiles:";
 
 export async function getCompanyProfile(env: Env, code: string): Promise<CompanyProfile | null> {
   if (!env.SIGNAL_KV || !/^\d{6}$/.test(code)) {
@@ -21,8 +23,18 @@ export async function getCompanyProfile(env: Env, code: string): Promise<Company
   }
 
   try {
-    const profile = await env.SIGNAL_KV.get<CompanyProfile>(`${COMPANY_PROFILE_PREFIX}${code}`, "json");
-    return profile && profile.code === code ? profile : null;
+    const chunk = await env.SIGNAL_KV.get<Record<string, CompanyProfile>>(
+      `${COMPANY_PROFILE_CHUNK_PREFIX}${code.slice(0, 2)}`,
+      "json"
+    );
+    if (chunk) {
+      const profile = chunk[code];
+      return profile && profile.code === code ? profile : null;
+    }
+
+    // Compatibility with the original one-key-per-company migration.
+    const legacy = await env.SIGNAL_KV.get<CompanyProfile>(`${COMPANY_PROFILE_PREFIX}${code}`, "json");
+    return legacy && legacy.code === code ? legacy : null;
   } catch {
     return null;
   }
@@ -30,13 +42,14 @@ export async function getCompanyProfile(env: Env, code: string): Promise<Company
 
 export async function getSnapshot(env: Env, now = new Date()): Promise<SignalSnapshot> {
   const cached = await readPublishedSnapshot(env);
+  const bundled = getBundledSnapshot();
   if (cached) {
     const normalized = enforceSnapshotLiquidity(cached);
-    if (hasLegacyObservationRows(cached)) {
-      const bundled = getBundledSnapshot();
-      if (bundled.marketDate >= cached.marketDate) {
-        return bundled;
-      }
+    if (bundled.marketDate > cached.marketDate) {
+      return bundled;
+    }
+    if (hasLegacyObservationRows(cached) && bundled.marketDate >= cached.marketDate) {
+      return bundled;
     }
     return normalized;
   }
@@ -45,7 +58,7 @@ export async function getSnapshot(env: Env, now = new Date()): Promise<SignalSna
     return await refreshSnapshot(env, now);
   }
 
-  return getBundledSnapshot();
+  return bundled;
 }
 
 /** Builds a provider preview only. Production persistence is handled by the

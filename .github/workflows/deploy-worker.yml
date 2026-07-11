@@ -54,7 +54,8 @@ jobs:
           )"
           echo "KV_NAMESPACE_ID=$KV_NAMESPACE_ID" >> "$GITHUB_ENV"
 
-      - name: Publish static company profiles to KV
+      - name: Publish static company profiles to KV (best effort)
+        continue-on-error: true
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -72,21 +73,36 @@ jobs:
       - name: Verify production API
         run: |
           node --input-type=module <<'JS'
-          const url = 'https://badguard.nizabentley397.workers.dev/api/health';
+          const baseUrl = 'https://badguard.nizabentley397.workers.dev';
           let lastStatus = 'not requested';
 
           for (let attempt = 1; attempt <= 6; attempt += 1) {
-            const response = await fetch(url).catch((error) => {
+            const responses = await Promise.all([
+              fetch(`${baseUrl}/api/health`),
+              fetch(`${baseUrl}/api/signals`),
+              fetch(`${baseUrl}/api/history`),
+              fetch(`${baseUrl}/api/history/2026-07-10`)
+            ]).catch((error) => {
               lastStatus = error.message;
-              return null;
+              return [];
             });
 
-            if (response?.ok) {
-              console.log(await response.text());
-              process.exit(0);
+            if (responses.length === 4 && responses.every((response) => response.ok)) {
+              const [, signalsResponse, historyResponse, detailResponse] = responses;
+              const [signals, history, detail] = await Promise.all([
+                signalsResponse.json(),
+                historyResponse.json(),
+                detailResponse.json()
+              ]);
+              const july10 = history?.dates?.find((entry) => entry.date === '2026-07-10');
+              if (signals.marketDate === '2026-07-10' && july10?.status === 'ready' && detail?.date === '2026-07-10') {
+                console.log(JSON.stringify({ marketDate: signals.marketDate, history: july10 }, null, 2));
+                process.exit(0);
+              }
+              lastStatus = `signals=${signals.marketDate}, history=${july10?.status}, detail=${detail?.date}`;
+            } else {
+              lastStatus = responses.map((response) => response.status).join('/');
             }
-
-            lastStatus = response?.status ?? lastStatus;
             await new Promise((resolve) => setTimeout(resolve, attempt * 5000));
           }
 

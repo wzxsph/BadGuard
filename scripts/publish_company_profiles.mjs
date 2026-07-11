@@ -22,6 +22,13 @@ const profiles = Object.entries(source)
   .map(([code, profile]) => validateProfile(code, profile))
   .sort((left, right) => left.code.localeCompare(right.code));
 const revision = createHash("sha256").update(sourceText).digest("hex");
+const chunks = new Map();
+for (const profile of profiles) {
+  const prefix = profile.code.slice(0, 2);
+  const chunk = chunks.get(prefix) || {};
+  chunk[profile.code] = profile;
+  chunks.set(prefix, chunk);
+}
 if (validateOnly) {
   console.log(JSON.stringify({ status: "validated", revision, count: profiles.length }, null, 2));
   process.exit(0);
@@ -38,52 +45,40 @@ if (existing?.revision === revision && existing?.count === profiles.length) {
   process.exit(0);
 }
 
-const previousCodes = new Set(Array.isArray(existing?.codes) ? existing.codes : []);
-const nextCodes = new Set(profiles.map((profile) => profile.code));
-const removedCodes = [...previousCodes].filter((code) => !nextCodes.has(code)).sort();
-
 if (dryRun) {
   console.log(JSON.stringify({
     status: "dry-run",
     revision,
     count: profiles.length,
-    batches: Math.ceil(profiles.length / batchSize),
-    removedCount: removedCodes.length
+    chunks: chunks.size,
+    maximumWrites: chunks.size + 1
   }, null, 2));
   process.exit(0);
 }
 
-for (let offset = 0; offset < profiles.length; offset += batchSize) {
-  const batch = profiles.slice(offset, offset + batchSize).map((profile) => ({
-    key: `company-profile:${profile.code}`,
-    value: JSON.stringify(profile)
-  }));
-  await bulkRequest("PUT", batch);
-  console.log(`Uploaded company profiles ${offset + 1}-${Math.min(offset + batch.length, profiles.length)} of ${profiles.length}.`);
-}
-
-for (let offset = 0; offset < removedCodes.length; offset += batchSize) {
-  const keys = removedCodes.slice(offset, offset + batchSize).map((code) => `company-profile:${code}`);
-  await bulkRequest("DELETE", keys);
+for (const [prefix, chunk] of [...chunks.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+  await putValue(`company-profiles:${prefix}`, JSON.stringify(chunk));
+  console.log(`Uploaded F10 prefix ${prefix} (${Object.keys(chunk).length} profiles).`);
 }
 
 const index = {
-  version: 1,
+  version: 2,
+  storage: "prefix-chunks",
   revision,
   count: profiles.length,
-  codes: profiles.map((profile) => profile.code),
+  prefixes: [...chunks.keys()].sort(),
   updatedAt: new Date().toISOString()
 };
 await putValue(indexKey, JSON.stringify(index));
 
 for (const profile of profiles.slice(0, 3)) {
-  const stored = await getJson(`company-profile:${profile.code}`);
-  if (!stored || stored.code !== profile.code) {
+  const stored = await getJson(`company-profiles:${profile.code.slice(0, 2)}`);
+  if (!stored || stored[profile.code]?.code !== profile.code) {
     throw new Error(`Company profile verification failed for ${profile.code}.`);
   }
 }
 
-console.log(JSON.stringify({ status: "published", revision, count: profiles.length, removedCount: removedCodes.length }, null, 2));
+console.log(JSON.stringify({ status: "published", revision, count: profiles.length, chunks: chunks.size }, null, 2));
 
 function validateProfile(code, profile) {
   if (!/^\d{6}$/.test(code) || !profile || typeof profile !== "object" || Array.isArray(profile)) {
@@ -111,18 +106,6 @@ async function putValue(key, value) {
     body: value
   });
   await assertCloudflareResponse(response, `KV PUT ${key}`);
-}
-
-async function bulkRequest(method, body) {
-  const response = await fetch(`${namespaceBase()}/bulk`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  await assertCloudflareResponse(response, `KV bulk ${method}`);
 }
 
 async function assertCloudflareResponse(response, label) {

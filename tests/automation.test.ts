@@ -9,6 +9,9 @@ describe("production automation contracts", () => {
     expect(refresh).toContain('cron: "15 8 * * 1-5"');
     expect(audit).toContain('cron: "17 */2 * * *"');
     expect(audit).toContain("--close-grace-minutes 45");
+    expect(audit).toContain("--min-history-coverage 0.98");
+    expect(audit).toContain("--min-close-coverage 0.98");
+    expect(audit).toContain('"force_publish": "true"');
     expect(audit).toContain("Check for an active production refresh");
     expect(audit).toContain("SHOULD_DISPATCH=true");
   });

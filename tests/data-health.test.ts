@@ -12,7 +12,7 @@ describe("data freshness", () => {
     expect(expectedCompletedTradingDate(tradingDates, new Date("2026-07-11T00:00:00Z"), 45)).toBe("2026-07-10");
   });
 
-  it("reports the missing July 10 board instead of calling July 9 current", async () => {
+  it("reports the missing July 10 history entry even when the bundled homepage is current", async () => {
     const snapshot = latestSnapshot as SignalSnapshot;
     const index = {
       version: 1,
@@ -32,7 +32,7 @@ describe("data freshness", () => {
       ok: false,
       status: "stale",
       expectedMarketDate: "2026-07-10",
-      currentMarketDate: "2026-07-09",
+      currentMarketDate: "2026-07-10",
       historyReady: false,
       missingDates: ["2026-07-10"]
     });

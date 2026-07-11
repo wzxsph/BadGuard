@@ -8,7 +8,7 @@ const args = parseArgs(process.argv.slice(2));
 const output = args.output || "data/quality-audit.json";
 const marketDateLookback = Number(args["market-lookback"] ?? 5);
 const minHistoryCoverage = Number(args["min-history-coverage"] ?? 0.98);
-const minCloseCoverage = Number(args["min-close-coverage"] ?? 0.9);
+const minCloseCoverage = Number(args["min-close-coverage"] ?? 0.98);
 const closeGraceMinutes = Number(args["close-grace-minutes"] ?? 45);
 const baseUrl = String(args["base-url"] ?? "").replace(/\/$/, "");
 

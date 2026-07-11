@@ -172,13 +172,13 @@ class ShardMergeTests(unittest.TestCase):
         self.assertEqual(manifest["contextHash"], self.context["contextHash"])
         self.assertEqual(manifest["universeManifestRevision"], self.universe["revision"])
 
-    def test_merge_rejects_history_coverage_below_ninety_eight_percent(self) -> None:
+    def test_merge_rejects_history_coverage_below_first_publication_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with self.assertRaises(SystemExit):
                 merge_shards(
                     self.context,
-                    self.make_shards({"000048", "000049"}),
+                    self.make_shards({"000044", "000045", "000046", "000047", "000048", "000049"}),
                     root / "latest.json",
                     root / "market-close.json",
                     root / "trading-calendar.json",

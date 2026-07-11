@@ -38,8 +38,11 @@ except ModuleNotFoundError:  # Direct `python scripts/...py` execution.
     from universe_manifest import load_optional_universe_manifest, validate_universe_manifest  # type: ignore[no-redef]
 
 
-MIN_HISTORY_SUCCESS_COVERAGE = 0.98
-MIN_EXACT_CLOSE_COVERAGE = 0.90
+# Publish a useful first edition even when one AkShare provider is having a
+# rough afternoon. The stricter audit target is enforced separately and
+# schedules repair runs for the same trading date.
+MIN_HISTORY_SUCCESS_COVERAGE = 0.90
+MIN_EXACT_CLOSE_COVERAGE = 0.85
 
 
 def main() -> None:

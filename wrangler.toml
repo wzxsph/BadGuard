@@ -4,6 +4,9 @@ main = "src/index.ts"
 compatibility_date = "2026-07-09"
 workers_dev = true
 
+[vars]
+BUNDLED_HISTORY_FALLBACK = "true"
+
 [[kv_namespaces]]
 binding = "SIGNAL_KV"
 id = "b1aa99421784423cb2669d98ffb302eb"

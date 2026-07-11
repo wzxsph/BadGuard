@@ -102,6 +102,28 @@ describe("history storage contract", () => {
     });
   });
 
+  it("merges the validated repository snapshot when production KV publication is delayed", async () => {
+    const values = new Map<string, unknown>([
+      [HISTORY_INDEX_KEY, makeIndex(
+        ["2026-07-08", "2026-07-09"],
+        [readyEntry("2026-07-09", "live"), readyEntry("2026-07-08", "backfill")]
+      )]
+    ]);
+
+    const index = await getHistoryIndex({
+      ...envWithKv(values),
+      BUNDLED_HISTORY_FALLBACK: "true"
+    });
+
+    expect(index.entries[0]).toMatchObject({
+      date: "2026-07-10",
+      source: "live",
+      status: "ready",
+      storage: "bundled"
+    });
+    expect(index.tradingDates).toContain("2026-07-10");
+  });
+
   it("never infers the exchange calendar from discoverable snapshot keys", async () => {
     const values = new Map<string, unknown>([
       [HISTORY_INDEX_KEY, {

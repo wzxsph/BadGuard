@@ -148,7 +148,7 @@ test("full production code-list snapshots reject stock-count shrink above one pe
   });
 });
 
-test("snapshot completeness requires 98% history and classifies 90% exact-close coverage", () => {
+test("snapshot completeness accepts the first-edition gate and supports a stricter repair target", () => {
   const snapshot = {
     meta: {
       stockCount: 100,
@@ -175,24 +175,7 @@ test("snapshot completeness requires 98% history and classifies 90% exact-close 
     historySuccessCount: 98,
     exactCloseCount: 90
   });
-  expect(() => assertSnapshotCompleteness(
-    {
-      ...snapshot,
-      meta: {
-        ...snapshot.meta,
-        historySuccessCount: 97,
-        historySuccessRate: 0.97,
-        failureCount: 3,
-        providerMissingCount: 3,
-        notListedCount: 2
-      }
-    },
-    {
-      ...close,
-      providerMissingCodes: ["000090", "000091", "000092"],
-      notListedCodes: ["000093", "000094"]
-    }
-  )).toThrow(/at least 98%/);
+  expect(() => assertSnapshotCompleteness(snapshot, close, 0.98, 0.98)).toThrow(/at least 98%/);
   expect(() => assertSnapshotCompleteness(
     snapshot,
     { ...close, providerMissingCodes: ["000090", "000091", "000092"] }

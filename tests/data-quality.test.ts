@@ -14,8 +14,8 @@ describe("snapshot data quality transparency", () => {
       historySuccessCount: 980,
       historySuccessRate: 0.98,
       failureCount: 20,
-      exactCloseCount: 970,
-      exactCloseCoverage: 0.97,
+      exactCloseCount: 990,
+      exactCloseCoverage: 0.99,
       perBoardLimit: 0,
       buildMode: "production",
       runContextHash: "ffffffffffffffffffffffffffffffff",
@@ -30,8 +30,8 @@ describe("snapshot data quality transparency", () => {
       stockCount: 1000,
       historySuccessCount: 980,
       historySuccessRate: 0.98,
-      exactCloseCount: 970,
-      exactCloseCoverage: 0.97,
+      exactCloseCount: 990,
+      exactCloseCoverage: 0.99,
       universeSource: "code-list",
       universeSourceLabel: "固定代码池",
       universeVersion: "0123456789abcdef0123456789abcdef",
@@ -109,19 +109,19 @@ describe("snapshot data quality transparency", () => {
     expect(getSnapshotDataQuality(snapshot).kind).toBe("partial-or-preview");
   });
 
-  it("labels the bundled snapshot as a carried, non-production preview without treating row count as failure", () => {
+  it("labels the validated repository fallback with its actual production coverage", () => {
     const quality = getSnapshotDataQuality(latestSnapshot as SignalSnapshot);
 
     expect(quality).toMatchObject({
-      kind: "partial-or-preview",
-      label: "非完整生产快照",
-      stockCount: 500,
-      historySuccessCount: 500,
-      exactCloseCount: 499,
-      exactCloseCoverage: 0.998,
+      kind: "complete-production",
+      label: "完整生产快照",
+      stockCount: 5315,
+      historySuccessCount: 5314,
+      exactCloseCount: 5305,
+      exactCloseCoverage: 0.998119,
       universeSourceLabel: "固定代码池",
-      universeVersion: null,
-      universeReuseLabel: "旧版未记录是否沿用",
+      universeVersion: "34e3b4fdb5909d25",
+      universeReuseLabel: "固定股票池已核对，本次无暂时缺席成员",
       snapshotTiming: "latest-completed",
       snapshotTimingLabel: "沿用最近完整收盘榜单"
     });
@@ -135,13 +135,13 @@ describe("snapshot data quality transparency", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(payload.marketDate).toBe("2026-07-09");
+    expect(payload.marketDate).toBe("2026-07-10");
     expect(payload.dataQuality).toMatchObject({
-      stockCount: 500,
-      historySuccessRate: 1,
-      exactCloseCoverage: 0.998,
+      stockCount: 5315,
+      historySuccessRate: 0.999812,
+      exactCloseCoverage: 0.998119,
       universeSource: "code-list",
-      kind: "partial-or-preview"
+      kind: "complete-production"
     });
   });
 
@@ -162,6 +162,8 @@ describe("snapshot data quality transparency", () => {
       universeManifestMemberCount: 1000,
       universeStaleCount: 7
     });
+    snapshot.marketDate = "2026-07-11";
+    snapshot.refreshedAt = "2026-07-11T15:30:00+08:00";
     const response = await worker.fetch(new Request("https://example.test/api/signals"), {
       SIGNAL_KV: {
         get: async (key: string) => key === "latest-signal-snapshot" ? snapshot : null

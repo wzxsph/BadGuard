@@ -48,6 +48,8 @@ jobs:
         run: |
           node scripts/audit_history_quality.mjs \
             --output data/quality-audit.json \
+            --min-history-coverage 0.98 \
+            --min-close-coverage 0.98 \
             --close-grace-minutes 45 \
             --base-url https://badguard.nizabentley397.workers.dev
 
@@ -99,8 +101,7 @@ jobs:
             "inputs": {
               "scan_limit": "1000",
               "publish_production": "true",
-              "force_publish": "false",
-              "bootstrap_seed": "false",
+              "force_publish": "true",
               "backfill_start": os.environ["BACKFILL_START"].replace("-", ""),
               "backfill_end": os.environ["BACKFILL_END"].replace("-", ""),
               "include_live_target": os.environ["INCLUDE_LIVE_TARGET"] if os.environ["INCLUDE_LIVE_TARGET"] in {"true", "false"} else "false",

@@ -63,7 +63,7 @@ export function getSnapshotDataQuality(
     meta.perBoardLimit === 0 &&
     acceptedUniverseVersion !== null &&
     historySuccessRate !== null && historySuccessRate >= 0.98 &&
-    exactCloseCoverage !== null && exactCloseCoverage >= 0.9;
+    exactCloseCoverage !== null && exactCloseCoverage >= 0.98;
   const kind: SnapshotQualityKind = bootstrapSeed
     ? "bootstrap-seed"
     : completeProduction

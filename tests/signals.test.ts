@@ -58,13 +58,13 @@ describe("daily technical signal board", () => {
     const html = renderHtml(snapshot);
     expect(html).toContain("数据范围");
     expect(html).toContain("扫描股票");
-    expect(html).toContain("500/500 只");
-    expect(html).toContain("499/500 只");
+    expect(html).toContain(`${snapshot.meta.historySuccessCount?.toLocaleString("zh-CN")}/${snapshot.meta.stockCount.toLocaleString("zh-CN")} 只`);
+    expect(html).toContain(`${snapshot.meta.exactCloseCount?.toLocaleString("zh-CN")}/${snapshot.meta.stockCount.toLocaleString("zh-CN")} 只`);
     expect(html).toContain("股票池版本");
     expect(html).toContain("股票池沿用");
-    expect(html).toContain("旧版未记录");
+    expect(html).toContain("本次无暂时缺席成员");
     expect(html).toContain("沿用最近完整收盘榜单");
-    expect(html).toContain("非完整生产快照");
+    expect(html).toContain("完整生产快照");
     expect(html).toContain("数量变化本身不代表数据故障");
   });
 
@@ -221,7 +221,7 @@ describe("daily technical signal board", () => {
   });
 
   it("reads production snapshot instead of staging snapshot", async () => {
-    const productionSnapshot = { ...snapshot, marketDate: "2026-07-09" };
+    const productionSnapshot = { ...snapshot, marketDate: "2026-07-11" };
     const stagingSnapshot = { ...snapshot, marketDate: "2099-01-01" };
     const values = new Map<string, SignalSnapshot>([
       [LATEST_SIGNAL_SNAPSHOT_KEY, productionSnapshot],
@@ -234,13 +234,13 @@ describe("daily technical signal board", () => {
       } as unknown as KVNamespace
     });
 
-    expect(result.marketDate).toBe("2026-07-09");
+    expect(result.marketDate).toBe("2026-07-11");
   });
 
   it("keeps the latest closed board visible before today's market close", async () => {
     const result = await getSnapshot({}, new Date("2026-07-10T02:00:00.000Z"));
 
-    expect(result.marketDate).toBe("2026-07-09");
+    expect(result.marketDate).toBe("2026-07-10");
     expect(result.topRows.length).toBeGreaterThan(0);
     expect(result.boards.some((board) => board.rows.length > 0)).toBe(true);
   });
@@ -266,7 +266,7 @@ describe("daily technical signal board", () => {
     });
 
     expect(result.marketDate).toBe(snapshot.marketDate);
-    expect(result.meta.buildMode).toBe("bundled");
+    expect(result.meta.buildMode).toBe("production");
     expect(result.topRows.length).toBeGreaterThan(0);
     expect(result.topRows.every((row) => row.liquidityEligible)).toBe(true);
   });

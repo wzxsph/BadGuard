@@ -15,10 +15,6 @@ on:
         description: Overwrite an existing production snapshot for the same market date.
         required: true
         default: "false"
-      bootstrap_seed:
-        description: Quickly seed verified bundled 2026-07-09 history without calling AkShare.
-        required: true
-        default: "false"
       backfill_start:
         description: Optional first exchange date to backfill, for example 20260708.
         required: false
@@ -155,7 +151,6 @@ jobs:
 
   prepare:
     name: Prepare stable universe
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.bootstrap_seed != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     outputs:
