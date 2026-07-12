@@ -1,6 +1,8 @@
 # BadGuard 散户看盘小纸条
 
-> 体验链接：<https://badguard.nizabentley397.workers.dev>
+> GitHub Pages 静态体验：<https://wzxsph.github.io/BadGuard/>
+>
+> 实时数据版：<https://badguard.nizabentley397.workers.dev>
 
 打开就看，不用选条件，不用在选股器里把自己点成迷路的韭菜。BadGuard 每天收盘后把 A 股日线里几个常见技术状态整理成 4 张小纸条：只写“观察 / 谨慎”，不写交易指令。
 

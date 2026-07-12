@@ -13,7 +13,8 @@ import { renderHtml } from "./render";
 
 const JSON_HEADERS = {
   "content-type": "application/json; charset=utf-8",
-  "cache-control": "no-store"
+  "cache-control": "no-store",
+  "access-control-allow-origin": "https://wzxsph.github.io"
 };
 
 const HTML_HEADERS = {
@@ -109,7 +110,8 @@ export default {
       return Response.json(profile, {
         headers: {
           "content-type": "application/json; charset=utf-8",
-          "cache-control": "public, max-age=86400"
+          "cache-control": "public, max-age=86400",
+          "access-control-allow-origin": "https://wzxsph.github.io"
         }
       });
     }
